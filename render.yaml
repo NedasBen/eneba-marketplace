@@ -1,0 +1,50 @@
+# Render Blueprint: the Laravel API as a Docker web service.
+# Values marked `sync: false` are secrets or deploy-specific URLs; Render asks
+# for them when the Blueprint is first applied and never reads them from git.
+services:
+  - type: web
+    name: eneba-marketplace-api
+    runtime: docker
+    plan: free
+    # Keep this in the same geography as the Neon project.
+    # Free-tier options: frankfurt, oregon, ohio, virginia, singapore.
+    region: frankfurt
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /up
+    autoDeploy: true
+    buildFilter:
+      paths:
+        - backend/**
+    envVars:
+      - key: APP_NAME
+        value: Eneba Marketplace
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_KEY
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: LOG_CHANNEL
+        value: stderr
+      - key: LOG_LEVEL
+        value: info
+      - key: DB_CONNECTION
+        value: pgsql
+      # Neon *pooled* connection string, used by the app at runtime.
+      - key: DB_URL
+        sync: false
+      # Neon *direct* connection string, used only for migrations on start-up.
+      - key: DB_MIGRATION_URL
+        sync: false
+      - key: SESSION_DRIVER
+        value: array
+      - key: CACHE_STORE
+        value: database
+      - key: QUEUE_CONNECTION
+        value: sync
+      # Comma-separated exact origins allowed by CORS (the Vercel URL).
+      - key: FRONTEND_URL
+        sync: false

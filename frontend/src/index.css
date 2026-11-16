@@ -1,0 +1,77 @@
+/* Placeholder shell styles; the Eneba design tokens arrive in the styling pass. */
+:root {
+  --color-bg: #1d0c4c;
+  --color-surface: #2a1566;
+  --color-header: #4618ac;
+  --color-text: #ffffff;
+  --color-text-muted: #c7bfe0;
+  --color-success: #3ed598;
+  --color-danger: #ff5f6d;
+  --color-accent: #fad945;
+
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--color-bg);
+}
+
+.site-header {
+  padding: 16px;
+  background: var(--color-header);
+}
+
+.site-header__logo {
+  font-weight: 800;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+}
+
+.page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 32px 16px;
+}
+
+.status {
+  margin: 24px 0 0;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+
+.status--loading {
+  color: var(--color-text-muted);
+}
+
+.status--error {
+  border-left: 4px solid var(--color-danger);
+}
+
+.status--ok {
+  display: grid;
+  gap: 8px;
+  border-left: 4px solid var(--color-success);
+}
+
+.status--ok div {
+  display: flex;
+  gap: 12px;
+}
+
+.status dt {
+  min-width: 90px;
+  color: var(--color-text-muted);
+}
+
+.status dd {
+  margin: 0;
+}

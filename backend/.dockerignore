@@ -1,0 +1,29 @@
+# Installed inside the image instead
+/vendor
+/node_modules
+
+# Secrets and local state never go into the image
+.env
+.env.*
+!.env.example
+/storage/logs/*
+!/storage/logs/.gitignore
+/storage/framework/cache/data/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+/storage/framework/testing
+/bootstrap/cache/*.php
+/public/hot
+/public/storage
+
+# Dev-only
+/tests
+/.phpunit.cache
+.phpunit.result.cache
+phpunit.xml
+/.claude
+AGENTS.md
+boost.json
+.editorconfig
+Dockerfile
+.dockerignore

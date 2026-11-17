@@ -3,6 +3,7 @@
 namespace App\Services\Catalog;
 
 use App\Enums\ProductSort;
+use App\Services\Search\SearchTerm;
 
 /**
  * Validated store filters, shared by the product listing and the filters
@@ -31,15 +32,18 @@ final readonly class CatalogFilters
         public bool $inStock = true,
         public ProductSort $sort = ProductSort::Popularity,
         public int $perPage = self::DEFAULT_PER_PAGE,
+        public ?SearchTerm $search = null,
     ) {}
 
     /**
      * The same filters without one facet, used for that facet's own counts
-     * (selecting PC must not zero out the Xbox count).
+     * (selecting PC must not zero out the Xbox count). The search query is
+     * never dropped: counts always describe the search results.
      */
     public function without(string $facet): self
     {
         return new self(
+            search: $this->search,
             platformSlugs: $facet === 'platform' ? [] : $this->platformSlugs,
             regionSlugs: $facet === 'region' ? [] : $this->regionSlugs,
             genreSlugs: $facet === 'genre' ? [] : $this->genreSlugs,

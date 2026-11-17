@@ -2,6 +2,9 @@
 
 namespace App\Models;
 
+use App\Casts\PostgresTextArray;
+use App\Services\Search\GameSearchText;
+use App\Services\Search\SearchVocabulary;
 use Database\Factories\GameFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -33,6 +36,23 @@ class Game extends Model
     ];
 
     /**
+     * Keep the derived search columns in step with the name, and drop the
+     * cached typo-correction vocabulary whenever the catalog changes.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (Game $game): void {
+            if ($game->isDirty('name') || ! $game->exists) {
+                $game->search_name = GameSearchText::normalize($game->name);
+                $game->search_tokens = GameSearchText::tokens($game->name);
+            }
+        });
+
+        static::saved(fn () => app(SearchVocabulary::class)->forget());
+        static::deleted(fn () => app(SearchVocabulary::class)->forget());
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array
@@ -42,6 +62,7 @@ class Game extends Model
             'screenshots' => 'array',
             'released_at' => 'date',
             'metacritic' => 'integer',
+            'search_tokens' => PostgresTextArray::class,
         ];
     }
 

@@ -2,8 +2,10 @@
 
 namespace Database\Seeders;
 
+use App\Casts\PostgresTextArray;
 use App\Enums\GamePlatform;
 use App\Enums\ProductKeyStatus;
+use App\Services\Search\GameSearchText;
 use Carbon\CarbonImmutable;
 use Database\Seeders\Concerns\InsertsInChunks;
 use Illuminate\Database\Seeder;
@@ -82,6 +84,9 @@ class CatalogSeeder extends Seeder
             'steam_app_id' => $game['steam_app_id'],
             'name' => $game['name'],
             'slug' => $game['slug'],
+            // Bulk inserts skip model events, so derive the search columns here.
+            'search_name' => GameSearchText::normalize($game['name']),
+            'search_tokens' => PostgresTextArray::toLiteral(GameSearchText::tokens($game['name'])),
             'short_description' => $game['short_description'],
             'description' => $game['description'],
             'cover_image_url' => $game['cover_image_url'],

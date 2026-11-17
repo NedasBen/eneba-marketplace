@@ -26,6 +26,8 @@ class ProductController extends Controller
             ->paginate($filters->perPage)
             ->withQueryString();
 
-        return ProductCardResource::collection($products);
+        // `query` lets the UI show "Showing results for witcher" after a correction.
+        return ProductCardResource::collection($products)
+            ->additional(['query' => $filters->search?->toArray()]);
     }
 }

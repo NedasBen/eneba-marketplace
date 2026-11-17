@@ -4,6 +4,7 @@ namespace App\Http\Requests\Api\V1;
 
 use App\Enums\ProductSort;
 use App\Services\Catalog\CatalogFilters;
+use App\Services\Search\GameSearch;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -43,6 +44,7 @@ class ListProductsRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'q' => ['sometimes', 'nullable', 'string', 'max:100'],
             'platform' => ['sometimes', 'array', 'max:'.self::MAX_FACET_VALUES],
             'platform.*' => ['string', 'distinct', Rule::exists('platforms', 'slug')],
             'region' => ['sometimes', 'array', 'max:'.self::MAX_FACET_VALUES],
@@ -75,16 +77,29 @@ class ListProductsRequest extends FormRequest
         ];
     }
 
+    /**
+     * With a usable query the default sort is relevance; without one,
+     * relevance falls back to popularity.
+     */
     public function catalogFilters(): CatalogFilters
     {
+        $search = app(GameSearch::class)->term($this->validated('q'));
+        $requestedSort = ProductSort::tryFrom((string) $this->validated('sort', ''));
+        $sort = $requestedSort ?? ($search === null ? ProductSort::Popularity : ProductSort::Relevance);
+
+        if ($sort->requiresQuery() && $search === null) {
+            $sort = ProductSort::Popularity;
+        }
+
         return new CatalogFilters(
+            search: $search,
             platformSlugs: $this->validated('platform', []),
             regionSlugs: $this->validated('region', []),
             genreSlugs: $this->validated('genre', []),
             priceMinCents: $this->eurosToCents($this->validated('price_min')),
             priceMaxCents: $this->eurosToCents($this->validated('price_max')),
             inStock: $this->boolean('in_stock', true),
-            sort: ProductSort::tryFrom((string) $this->validated('sort', '')) ?? ProductSort::Popularity,
+            sort: $sort,
             perPage: (int) $this->validated('per_page', CatalogFilters::DEFAULT_PER_PAGE),
         );
     }

@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\Product;
 use App\Services\Catalog\ProductStockAggregator;
+use App\Services\Search\SearchVocabulary;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
@@ -54,6 +55,9 @@ class DatabaseSeeder extends Seeder
         });
 
         if ($seeded) {
+            // Bulk inserts bypass Game model events, so clear the cached vocabulary here.
+            app(SearchVocabulary::class)->forget();
+
             $this->command?->info(sprintf(
                 'Seeded %d products, %d offers, %d keys and %d orders in %.1fs.',
                 DB::table('products')->count(),

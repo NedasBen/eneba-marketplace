@@ -88,11 +88,12 @@ it('lists the sort and page-size options so the frontend hardcodes none', functi
     $this->getJson('/api/v1/catalog/filters')
         ->assertOk()
         ->assertJsonPath('data.sorts', [
-            ['value' => 'popularity', 'label' => 'Best selling'],
-            ['value' => 'price_asc', 'label' => 'Price: low to high'],
-            ['value' => 'price_desc', 'label' => 'Price: high to low'],
-            ['value' => 'release_date', 'label' => 'Newest releases'],
-            ['value' => 'name', 'label' => 'Name: A to Z'],
+            ['value' => 'relevance', 'label' => 'Relevance', 'requires_query' => true],
+            ['value' => 'popularity', 'label' => 'Best selling', 'requires_query' => false],
+            ['value' => 'price_asc', 'label' => 'Price: low to high', 'requires_query' => false],
+            ['value' => 'price_desc', 'label' => 'Price: high to low', 'requires_query' => false],
+            ['value' => 'release_date', 'label' => 'Newest releases', 'requires_query' => false],
+            ['value' => 'name', 'label' => 'Name: A to Z', 'requires_query' => false],
         ])
         ->assertJsonPath('data.default_sort', 'popularity')
         ->assertJsonPath('data.per_page', ['options' => [12, 24, 48], 'default' => 24]);

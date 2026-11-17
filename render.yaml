@@ -41,8 +41,12 @@ services:
         sync: false
       - key: SESSION_DRIVER
         value: array
+      # Container-local cache: the search vocabulary and rate limiter cost
+      # 0 DB queries (vs ~9 per autocomplete request with the database store).
+      # Fine for one instance; with several, move to Redis so a game save
+      # clears every instance's vocabulary cache.
       - key: CACHE_STORE
-        value: database
+        value: file
       - key: QUEUE_CONNECTION
         value: sync
       # Seed the demo catalog on boot when the database has no products.

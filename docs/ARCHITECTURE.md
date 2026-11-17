@@ -262,7 +262,8 @@ Primary keys and the index Postgres creates for every `UNIQUE` constraint are im
 
 | Table | Index | Type | Serves |
 |---|---|---|---|
-| games | `name gin_trgm_ops` | GIN (pg_trgm) | Typo-tolerant and partial search (`%`, `<%`, `ILIKE`) |
+| games | `search_name gin_trgm_ops` | GIN (pg_trgm) | Word-prefix (`LIKE '%q%'` pre-filter) and fuzzy (`<%`) search |
+| games | `search_tokens` | GIN (array) | Exact word/acronym containment (`@>`), e.g. `gta 5`, `rdr2` |
 | games | `slug` | UNIQUE | Lookups |
 | games | `steam_app_id` | UNIQUE | Idempotent re-import |
 | games | `released_at` | B-tree | Sort by release date, New releases block |
@@ -297,14 +298,67 @@ The `pg_trgm` extension is enabled by the first migration (`CREATE EXTENSION IF 
 
 ## Search
 
-All three entry points, the header autocomplete, the `/store?q=` results page and the store search box, use one query object, `ProductSearch`:
+The store (`/products?q=`) and the header autocomplete (`/search/suggest?q=`) share `GameSearch` (in `Services/Search`). Search works on **games**: the store then lists every product of the matching games, and autocomplete shows one entry per game.
 
-1. Normalise the input: trim it, collapse whitespace, cap it at 100 characters.
-2. Match `games.name ILIKE %q%` (partial names), **or** `q <% games.name` (word similarity, which tolerates typos such as *"eldn ring"* or *"witchr 3"*).
-3. Rank: exact prefix match first, then `word_similarity(q, games.name)` descending, then `sold_count`.
-4. The similarity threshold is set with `SET LOCAL pg_trgm.word_similarity_threshold = 0.3` inside the query's transaction. `SET LOCAL` keeps it safe behind Neon's transaction-mode connection pooler.
+**Why trigrams alone aren't enough.** Measured on the seeded catalog:
 
-When `q` is present the default sort is `relevance`. Otherwise it is `popularity`.
+| Query | Best trigram match | Wanted | Why |
+|---|---|---|---|
+| `eldn ring` | ELDEN RING (word_similarity 0.615) | ELDEN RING | fine |
+| `cyberpnk` | Cyberpunk 2077 (0.667) | Cyberpunk 2077 | fine |
+| `wichter` | Monster Hunter Wilds (0.50) | The Witcher 3 | swapped letters destroy most shared trigrams |
+| `gta 5` | GTFO (0.33) | Grand Theft Auto V | an abbreviation plus a Roman numeral share no letters with the name |
+
+Search therefore has three layers.
+
+**1. Search columns** (`GameSearchText`), derived from the name:
+- **`search_name`** is the name lowercased, with accents and ™/® removed, punctuation turned into spaces and Roman numerals II–X turned into digits ("Grand Theft Auto V Enhanced" → `grand theft auto 5 enhanced`). It has a GIN trigram index.
+- **`search_tokens text[]`** holds the name's words plus initial-letter acronyms of 3 or more characters, in digit and Roman form: `gta`, `gta5`, `gtav`, `rdr2`, `bg3`, `kcd2`. It has a GIN index.
+- **How they're kept current:** a `Game::saving` hook fills them, the seeder fills them in its bulk insert, and the migration backfilled existing rows.
+
+**2. Typo correction per word** (`QueryCorrector`) runs before the SQL, using PHP's `levenshtein()` against the catalog vocabulary. Levenshtein distance counts single-letter insertions, deletions and substitutions.
+- **Allowed edits:** 1 for words of 4–5 characters, 2 for 6 or more. Words of 1–3 characters and numbers are never corrected.
+- **Partial words aren't corrected:** a word that is the start of a vocabulary word (`cyber`) is left for prefix matching.
+- **Ties** prefer the same first letter, then the closer length.
+- Examples: `wichter` → `witcher`, `eldn` → `elden`, `cyberpnk` → `cyberpunk`.
+
+**3. Tiered ranking.** Each matching game gets a tier, and results sort by tier first:
+
+| Tier | Rule (corrected query) | Example |
+|---|---|---|
+| 4 | exact name | `eldn ring` → `elden ring` |
+| 3 | name starts with the query | `red dead`, `cyber` |
+| 2 | query starts at a word boundary, **or** every query word is in `search_tokens` | `witcher` in "the **witcher** 3 …", `gta 5`, `rdr2` |
+| 1 | fuzzy only: `query <% search_name` (word_similarity ≥ **0.6**, pg_trgm's default) | multiple typos the corrector didn't fix |
+
+**Order within a tier:**
+- **`word_similarity`:** how well the query matches the closest stretch of the name.
+- **Then `similarity`:** overlap with the whole name, so closer and shorter names win. "Fallout 4" (1.0) beats "Fallout 76" (0.615) for `fallout 4`.
+- **Then sales.**
+
+**Why 0.6.** After correction, real matches score 0.6–1.0, and the worst noise measured was 0.5. 0.6 is also the default threshold for the `<%` operator, which can use the trigram index. Keeping the default means there's no `SET` to manage behind Neon's transaction-mode pooler.
+
+**Short queries:**
+
+| Query length (after normalizing) | Behaviour |
+|---|---|
+| under 2 characters | ignored: the listing shows unfiltered results, suggest returns `[]` |
+| 2–3 characters | tiers 2–4 only, with no correction and no fuzzy tier, because 2–3 letters produce too few trigrams to compare reliably. `re` → Resident Evil, Red Dead, Ready or Not; `gta` matches by acronym |
+
+**Response metadata.** Both endpoints return `query: { original, corrected }`, with `corrected` set to `null` when nothing changed. The UI can then show "Showing results for *witcher*". With `q`, the default sort is `relevance`; `sort=relevance` without `q` falls back to popularity. Facet counts always apply the search.
+
+**Vocabulary cache.** The vocabulary (every distinct `search_tokens` word, a few hundred) is read only when a query word might need correcting. It's cached forever and cleared on `Game` saved/deleted events and after seeding.
+
+**Cache store matters.** Measured per autocomplete request with the vocabulary cached:
+
+| Cache store | Queries per request |
+|---|---|
+| `database` | about 10: about 6 for the rate limiter, plus cache reads, plus the 1 search query |
+| `file` | **1** |
+
+Render therefore uses `CACHE_STORE=file`. That's fine for one instance; several instances would need Redis so that a game save clears every instance's cache.
+
+**Known limitation:** a mixed query like `elden ring xbox` still finds ELDEN RING, but only through the fuzzy tier. Mapping platform words onto the platform filter is left out on purpose.
 
 ---
 
@@ -390,9 +444,9 @@ All responses are JSON. Collections use `{ data, links, meta }` (Laravel paginat
 | GET | `/products` | `q`, `platform[]`, `region[]`, `genre[]`, `price_min`, `price_max` (EUR), `in_stock` (bool, default true), `sort` = `relevance\|popularity\|price_asc\|price_desc\|release_date\|name`, `page`, `per_page` (≤ 48) | `200` paginated product cards (name, slug, cover, platform, region, `from` price, discount %, offers_count) |
 | GET | `/products/{slug}` | — | `200` product + game (description, genres, screenshots) + **offers** (cheapest first: seller, rating, price, stock) + other editions of the same game |
 | GET | `/catalog/filters` | Same filter params as `/products` | `200 { platforms[], regions[], genres[] }` each with `count` under the current filters, plus `price: { min, max }`, `sorts[] { value, label }`, `default_sort`, `per_page { options, default }` |
-| GET | `/search/suggestions` | `q` (≥ 2 chars) | `200` up to 8 product cards for the header autocomplete (60/min per IP) |
+| GET | `/search/suggest` | `q` (≥ 2 characters, otherwise `data: []`) | `200 { data, query }`: up to 8 **games** (name, slug, cover, cheapest in-stock `price_from`, `platforms` with stock, `product_slug` of the cheapest in-stock product, `in_stock`). 60/min per IP |
 
-**Implemented so far:** `/products` (everything except `q` and the `relevance` sort, which come with search) and `/catalog/filters`. Both endpoints use one FormRequest (`ListProductsRequest`) and one query object (`ProductCatalogQuery`). How they work:
+**Implemented:** `/products` (including `q` and the `relevance` sort, see [Search](#search)), `/catalog/filters` and `/search/suggest`. Both endpoints use one FormRequest (`ListProductsRequest`) and one query object (`ProductCatalogQuery`). How they work:
 
 - **Filter params:** facet params take `platform[]=pc&platform[]=xbox` or `platform=pc,xbox`. An unknown slug gets a `422` rather than being ignored.
 - **Combining filters:** options within a facet are OR-ed, and facets are AND-ed with each other. Genre uses `WHERE EXISTS`, so a game matching two selected genres appears once.
@@ -476,12 +530,13 @@ Items marked *(planned)* don't exist yet.
 ```
 backend/app/
   Http/Controllers/Api/V1/   thin controllers
-  Http/Requests/             FormRequests (validation)                                   (planned)
-  Http/Resources/            API Resources (response shape)                              (planned)
+  Http/Requests/             ListProductsRequest, SuggestGamesRequest
+  Http/Resources/            ProductCardResource
   Models/                    14 Eloquent models (Game, Product, Offer, ProductKey, Order, ...)
-  Enums/                     GamePlatform, ProductKeyStatus, OrderStatus, PaymentStatus, HomepageBlockType
+  Enums/                     GamePlatform, ProductSort, ProductKeyStatus, OrderStatus, PaymentStatus, HomepageBlockType
   Services/Catalog/          SteamStoreClient, SteamGameNormalizer, ProductStockAggregator,
-                             ProductSearch (planned)
+                             CatalogFilters, ProductCatalogQuery
+  Services/Search/           GameSearch, GameSearchText, QueryCorrector, SearchTerm, SearchVocabulary
   Services/Checkout/         CheckoutService (reserve), OrderPaymentService (pay),
                              ReleaseExpiredReservations (sweep)                          (planned)
   Services/Payments/         PaymentGateway (interface), SimulatedPaymentGateway         (planned)

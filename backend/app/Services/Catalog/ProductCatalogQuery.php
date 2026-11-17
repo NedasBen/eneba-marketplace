@@ -7,6 +7,7 @@ use App\Models\Genre;
 use App\Models\Platform;
 use App\Models\Product;
 use App\Models\Region;
+use App\Services\Search\GameSearch;
 use App\Support\Money;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -20,6 +21,8 @@ use Illuminate\Database\Query\Builder as QueryBuilder;
  */
 class ProductCatalogQuery
 {
+    public function __construct(private readonly GameSearch $gameSearch) {}
+
     /**
      * Filtered and sorted products, ready to eager load and paginate.
      *
@@ -29,7 +32,13 @@ class ProductCatalogQuery
     {
         $query = $this->filtered($filters)->select('products.*');
 
-        match ($filters->sort) {
+        match ($filters->sort === ProductSort::Relevance && $filters->search === null ? ProductSort::Popularity : $filters->sort) {
+            // Search tier, then trigram scores (see GameSearch), then sales.
+            ProductSort::Relevance => $query
+                ->orderByDesc('search.tier')
+                ->orderByDesc('search.word_score')
+                ->orderByDesc('search.name_score')
+                ->orderByDesc('products.sold_count'),
             ProductSort::Popularity => $query->orderByDesc('products.sold_count'),
             ProductSort::PriceAsc => $query->orderByRaw('products.min_price_cents ASC NULLS LAST'),
             ProductSort::PriceDesc => $query->orderByRaw('products.min_price_cents DESC NULLS LAST'),
@@ -53,7 +62,7 @@ class ProductCatalogQuery
      *     regions: list<array{slug: string, name: string, count: int}>,
      *     genres: list<array{slug: string, name: string, count: int}>,
      *     price: array{min: array{amount_cents: int, currency: string}|null, max: array{amount_cents: int, currency: string}|null},
-     *     sorts: list<array{value: string, label: string}>,
+     *     sorts: list<array{value: string, label: string, requires_query: bool}>,
      *     default_sort: string,
      *     per_page: array{options: list<int>, default: int}
      * }
@@ -101,10 +110,10 @@ class ProductCatalogQuery
                 'max' => Money::fromNullableCents($priceRange?->max_cents === null ? null : (int) $priceRange->max_cents),
             ],
             'sorts' => array_map(
-                fn (ProductSort $sort): array => ['value' => $sort->value, 'label' => $sort->label()],
+                fn (ProductSort $sort): array => ['value' => $sort->value, 'label' => $sort->label(), 'requires_query' => $sort->requiresQuery()],
                 ProductSort::cases(),
             ),
-            'default_sort' => ProductSort::Popularity->value,
+            'default_sort' => ($filters->search === null ? ProductSort::Popularity : ProductSort::Relevance)->value,
             'per_page' => ['options' => CatalogFilters::PER_PAGE_OPTIONS, 'default' => CatalogFilters::DEFAULT_PER_PAGE],
         ];
     }
@@ -115,6 +124,11 @@ class ProductCatalogQuery
     private function filtered(CatalogFilters $filters): Builder
     {
         $query = Product::query();
+
+        if ($filters->search !== null) {
+            // One row per matching game, so joining never duplicates products.
+            $query->joinSub($this->gameSearch->scoredGames($filters->search), 'search', 'search.game_id', '=', 'products.game_id');
+        }
 
         if ($filters->platformSlugs !== []) {
             $query->whereIn('products.platform_id', Platform::query()->select('id')->whereIn('slug', $filters->platformSlugs));

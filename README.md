@@ -78,6 +78,8 @@ php artisan test
 | Vercel | [frontend/vercel.json](frontend/vercel.json) | Root directory `frontend`, env `VITE_API_URL` |
 | Neon | — | Pooled connection string for the app, direct connection string for migrations |
 
-## Data sources
+## Data sources & credits
 
 Game titles, descriptions, artwork and retail prices come from the public [Steam Store](https://store.steampowered.com), fetched once with `php artisan catalog:fetch-steam` and committed as `backend/database/data/games.json`. The console platforms for each game are hand-curated. Game data and images are © their respective owners. This is a non-commercial demo, not affiliated with Valve or Eneba. Sellers, offers, prices and keys are generated demo data.
+
+The UI typeface is [Metropolis](https://github.com/dw5/Metropolis) by Chris Simpson. It's released into the public domain under [The Unlicense](https://github.com/dw5/Metropolis/blob/master/UNLICENSE) and self-hosted through [`@fontsource/metropolis`](https://fontsource.org/fonts/metropolis). It's the same typeface eneba.com uses, but bundled with this app rather than loaded from Eneba's servers.

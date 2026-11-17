@@ -520,6 +520,38 @@ Guests keep a cart in `localStorage`. It is sent to `/cart/merge` right after lo
 | `/checkout/:reference` | Payment form for a pending order | 🔒 |
 | `/orders`, `/orders/:reference` | Order history, order detail with keys | 🔒 |
 | `/login`, `/register` | Auth (honours `?redirect=`) | |
+| `/dev/components` | Component showcase for comparing against eneba.com. Deployed but not linked anywhere; served with `X-Robots-Tag: noindex` | |
+
+## Frontend foundation
+
+**Stack:** React 19, React Router 8 (data router), TanStack Query 5, Tailwind CSS 4, and the Metropolis font, by Chris Simpson, self-hosted from `@fontsource/metropolis` (public domain, The Unlicense). Exact versions are pinned in `package.json`.
+
+**Design tokens (`src/index.css`, `@theme`).**
+- **Where the values come from:** most were extracted from eneba.com's production CSS (`main.94c60c09….css`, `6856.f8b905dd….css`). The header, search dropdown, card price block and footer were pixel-sampled from screenshots.
+- **Role names, not raw values:** components use names like `bg-page`, `bg-card`, `bg-accent`, `text-muted` and `text-discount`, never hex values. Tailwind's default palette is removed.
+- **Spacing:** Eneba lays out on a 5px grid, so the spacing step is set to 5px (`p-2` = 10px). The root font size stays at 16px. Eneba's own CSS shrinks it to 10px (`html{font-size:62.5%}`), which would distort Tailwind's defaults.
+- **The one value I chose rather than extracted:** the focus ring, a 2px yellow outline, because none was visible in Eneba's CSS or the screenshots.
+
+**Layout:**
+
+```
+frontend/src/
+  index.css               tokens (@theme), fonts, base styles
+  main.tsx                QueryClient (no retries on 4xx) + RouterProvider
+  routes/                 router.tsx (all routes, lazy dev page), RequireAuth.tsx
+  lib/api/                client.ts (apiGet, ApiError with 422 field errors), types.ts, catalog.ts (query options + hooks)
+  lib/                    format.ts (Intl EUR), cn.ts
+  hooks/                  useDebouncedValue
+  components/ui/          Button (+ buttonStyles), Badge, PriceTag, ProductCard, Skeleton
+  components/search/      SearchBox (ARIA 1.2 combobox)
+  components/layout/      AppLayout, Header (platform links from /catalog/filters), Footer (Steam credit), Logo
+  pages/                  placeholders per route, dev/ComponentsPage
+```
+
+**Header search:**
+- Suggestions are debounced by 200ms, need at least 2 characters, and the previous results stay visible while the next request loads.
+- ↑/↓ move a highlight through the results using `aria-activedescendant`, so focus stays in the input. Enter opens the highlighted game or `/store?q=`, and Escape or a click outside closes the list.
+- When the API corrected the query, it shows "Showing results for **witcher**".
 
 ---
 

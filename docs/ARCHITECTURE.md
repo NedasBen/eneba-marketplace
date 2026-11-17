@@ -7,7 +7,7 @@ flowchart LR
     U[Browser] --> FE["frontend/<br/>React + TS + Vite<br/>(Vercel)"]
     FE -- "HTTPS, JSON<br/>Authorization: Bearer" --> BE["backend/<br/>Laravel 12 REST API<br/>(Render, Docker)"]
     BE --> DB[("PostgreSQL 16<br/>+ pg_trgm<br/>(Neon)")]
-    RAWG["RAWG API"] -. "one-off: php artisan catalog:fetch-rawg<br/>→ database/data/games.json (committed)" .-> BE
+    STEAM["Steam Store API<br/>(public, keyless)"] -. "one-off: php artisan catalog:fetch-steam<br/>→ database/data/games.json (committed)" .-> BE
 ```
 
 | Concern | Decision | Why |
@@ -17,7 +17,7 @@ flowchart LR
 | Auth | Sanctum **personal access tokens** (Bearer) | Vercel and Render are different sites, so cookie-based SPA auth would be blocked as third-party |
 | Search | Postgres `pg_trgm` (trigram similarity + ILIKE) | Tolerates typos without an extra search service to deploy |
 | Payments | `PaymentGateway` interface + `SimulatedPaymentGateway` | No real money; swapping in Stripe means one new class |
-| Catalog data | RAWG fetched once into a committed JSON seed | Seeding and deploys don't depend on RAWG being up or on an API key |
+| Catalog data | Steam Store `appdetails` fetched once into a committed JSON seed | Real titles, descriptions and artwork without an API key; seeding and deploys never call Steam |
 | Money | Integer cents, single currency EUR | No float rounding; multi-currency is out of scope |
 | Local dev | Postgres in Docker; XAMPP PHP 8.2 (`pdo_pgsql` enabled) | Databases `eneba` (dev) and `eneba_test` (tests, real `pg_trgm`) |
 
@@ -73,12 +73,15 @@ erDiagram
     }
     games {
         bigint id PK
-        int rawg_id UK
+        int steam_app_id UK
         string name "GIN trgm index"
         string slug UK
-        text description "plain text (RAWG description_raw)"
-        string cover_image_url
-        string background_image_url
+        text short_description "plain text"
+        text description "plain text, converted from Steam HTML"
+        string cover_image_url "portrait 600x900, header image as fallback"
+        string header_image_url "460x215"
+        string hero_image_url "nullable, wide banner art"
+        jsonb screenshots "list of URLs"
         date released_at
         smallint metacritic "nullable"
         string developer "nullable"
@@ -91,8 +94,9 @@ erDiagram
     }
     platforms {
         bigint id PK
-        string name "Steam, Xbox Live, PSN, Nintendo eShop, EA app, GOG..."
-        string slug UK
+        string name "PC, PlayStation, Xbox, Nintendo Switch"
+        string slug UK "pc | playstation | xbox | nintendo-switch"
+        string activation_service "Steam, PSN, Xbox Live, Nintendo eShop"
     }
     regions {
         bigint id PK
@@ -200,7 +204,19 @@ The diagram omits `timestamps` and Laravel framework tables (`sessions`, `cache`
 - **Snapshots on `order_items`.** The name, seller and price are copied at checkout, so later price changes or deleted offers never alter order history.
 - **Keys are encrypted at rest** using Laravel's `encrypted` cast. They are only returned to the owner of a **paid** order.
 - **Reservations expire lazily.** A key counts as available when `status = 'available'` OR `status = 'reserved' AND reserved_until < now()`. The free tier on Render has no cron worker, so correctness can't depend on a scheduler. A scheduled `orders:expire-pending` command still exists to tidy up rows.
-- **Seeded data.** RAWG supplies games, genres and images. A seeder generates platforms, regions, sellers, offers, fake key codes and plausible `sold_count` values. RAWG is credited in the footer and the README.
+- **Real platforms only.** A game gets a product only for platforms it is actually sold on, e.g. ELDEN RING → PC, PlayStation, Xbox. Steam can't tell us about consoles, so each game's platforms are curated by hand in `database/data/steam-catalog-sources.json`. A console is listed only when the game is currently sold digitally on that console family. Product names follow Eneba's style: `{game} {activation service} Key {REGION}`, e.g. "ELDEN RING PSN Key EUROPE".
+- **Integrity in the database.** CHECK constraints cover positive prices, cart quantity 1–10 and order quantities. `enum()` columns become CHECK constraints on Postgres. A key's `status`, `order_item_id` and `reserved_until` must agree: an available key has neither, a reserved key has both, and a sold key has an order item.
+- **Seeded data.** Steam supplies the games, genres, descriptions, artwork and retail prices. A seeder generates regions, sellers, offers, fake key codes and plausible `sold_count` values. Steam is credited in the footer and the README.
+
+### Catalog import (`php artisan catalog:fetch-steam`)
+
+1. Read the curated list `database/data/steam-catalog-sources.json`. Each entry has `steam_app_id`, `name` and `platforms`.
+2. For each game not yet in `database/data/games.json` (all games with `--fresh`), call `GET store.steampowered.com/api/appdetails?appids={id}&cc=lt&l=english`. The command waits 1.5 s between games. Connection errors, 429s and 5xx responses are retried 3 times (2 s / 5 s / 15 s).
+3. Skip anything that isn't a paid game with an EUR price in the Lithuanian store. Also skip apps whose Steam name doesn't match the curated name, which catches a mistyped app ID that would otherwise attach the wrong platforms to another game.
+4. Check with `HEAD` requests that `library_600x900_2x.jpg` (the portrait cover) and `library_hero.jpg` exist on Steam's CDN. If not, fall back to the header image and the background image.
+5. Convert descriptions to plain text, then write the file atomically after **every** game. If Steam keeps failing, progress is already saved and the command exits non-zero, so running it again resumes where it stopped. Games removed from the source list are dropped from the output.
+
+Images are hotlinked from `*.steamstatic.com` (allowed in the CSP) rather than committed to the repo.
 
 ---
 
@@ -212,7 +228,7 @@ Primary keys and the index Postgres creates for every `UNIQUE` constraint are im
 |---|---|---|---|
 | games | `name gin_trgm_ops` | GIN (pg_trgm) | Typo-tolerant and partial search (`%`, `<%`, `ILIKE`) |
 | games | `slug` | UNIQUE | Lookups |
-| games | `rawg_id` | UNIQUE | Idempotent re-import |
+| games | `steam_app_id` | UNIQUE | Idempotent re-import |
 | games | `released_at` | B-tree | Sort by release date, New releases block |
 | game_genre | `(game_id, genre_id)` | PK | Genre membership |
 | game_genre | `genre_id` | B-tree | Filter by genre |
@@ -221,7 +237,7 @@ Primary keys and the index Postgres creates for every `UNIQUE` constraint are im
 | products | `(platform_id, min_price_cents)` | B-tree | Platform filter + price sort |
 | products | `(region_id)` | B-tree | Region filter |
 | products | `(min_price_cents) WHERE min_price_cents IS NOT NULL` | Partial B-tree | Price range filter / sort over in-stock products |
-| products | `(sold_count DESC)` | B-tree | Best sellers block, "Popularity" sort |
+| products | `sold_count` | B-tree | Best sellers block, "Popularity" sort (a B-tree can be scanned backwards, so `DESC` needs no separate index) |
 | offers | `(product_id, seller_id)` | UNIQUE | One offer per seller per product |
 | offers | `(product_id, price_cents) WHERE is_active` | Partial B-tree | Offers on the product page, cheapest first |
 | offers | `seller_id` | B-tree | FK |
@@ -231,7 +247,7 @@ Primary keys and the index Postgres creates for every `UNIQUE` constraint are im
 | cart_items | `offer_id` | B-tree | FK |
 | orders | `reference` | UNIQUE | Public order URLs |
 | orders | `(user_id, idempotency_key)` | UNIQUE | Checkout idempotency |
-| orders | `(user_id, created_at DESC)` | B-tree | Order history |
+| orders | `(user_id, created_at)` | B-tree | Order history, newest first |
 | orders | `(expires_at) WHERE status = 'pending'` | Partial B-tree | Expiry sweep |
 | order_items | `order_id`, `offer_id`, `product_id` | B-tree | FKs |
 | payments | `order_id` | B-tree | FK |
@@ -239,7 +255,7 @@ Primary keys and the index Postgres creates for every `UNIQUE` constraint are im
 | banners | `(is_active, position)` | B-tree | Hero banner block |
 | personal_access_tokens | `token` (unique), `(tokenable_type, tokenable_id)` | — | Created by Sanctum's migration |
 
-The `pg_trgm` extension is enabled by the first migration (`CREATE EXTENSION IF NOT EXISTS pg_trgm`). Neon supports it.
+The `pg_trgm` extension is enabled by the first migration (`CREATE EXTENSION IF NOT EXISTS pg_trgm`). Neon supports it. Laravel's schema builder can't express GIN operator classes or partial indexes, so those few use `DB::statement()` inside the migration that creates the table.
 
 ---
 
@@ -308,7 +324,7 @@ sequenceDiagram
 
 **The XSS trade-off.** Any JavaScript running on the page can read `localStorage`, so a single XSS bug would let an attacker *steal* the token and use it elsewhere until it expires. An `HttpOnly` cookie can't be read by JS. However, XSS can still make authenticated requests from inside the page in either model, so preventing XSS is the real defence whichever storage we pick. Mitigations:
 
-- React escapes all output. There is no `dangerouslySetInnerHTML`, and RAWG descriptions are stored as plain text (`description_raw`).
+- React escapes all output. There is no `dangerouslySetInnerHTML`, and Steam descriptions are converted to plain text during the catalog import.
 - A strict Content-Security-Policy on Vercel (`script-src 'self'`) blocks injected and third-party scripts.
 - Tokens are short-lived and revoked on logout.
 
@@ -405,8 +421,11 @@ backend/app/
   Services/Checkout/         CheckoutService (reserve), OrderPaymentService (pay)
   Services/Payments/         PaymentGateway (interface), SimulatedPaymentGateway, PaymentResult
   Services/Homepage/         HomepageBlockProvider (interface), HomepageBlockRegistry, Blocks/*
-  Console/Commands/          FetchRawgCatalog, ExpirePendingOrders
-backend/database/data/games.json   committed RAWG snapshot
+  Services/Catalog/          SteamStoreClient, SteamGameNormalizer (catalog import)
+  Enums/                     GamePlatform (pc, playstation, xbox, nintendo-switch)
+  Console/Commands/          FetchSteamCatalog, ExpirePendingOrders
+backend/database/data/steam-catalog-sources.json   curated app IDs + real platforms
+backend/database/data/games.json                   committed Steam snapshot (generated)
 ```
 
 ## Out of scope (deliberately)

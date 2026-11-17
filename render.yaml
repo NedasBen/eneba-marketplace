@@ -45,6 +45,9 @@ services:
         value: database
       - key: QUEUE_CONNECTION
         value: sync
+      # Seed the demo catalog on boot when the database has no products.
+      - key: SEED_IF_EMPTY
+        value: "true"
       # Comma-separated exact origins allowed by CORS (the Vercel URL).
       - key: FRONTEND_URL
         sync: false

@@ -12,6 +12,14 @@ A digital game key marketplace in the style of [eneba.com](https://www.eneba.com
 
 > The backend runs on Render's free tier and sleeps after about 15 minutes of inactivity. The first request after that can take 30–60 seconds while it wakes up.
 
+### Demo account
+
+| Email | Password |
+|---|---|
+| `demo@example.com` | `password` |
+
+The demo account has a few past orders with their keys, so you can check order history without registering. You can also create your own account.
+
 ## Stack
 
 - **Frontend:** React + TypeScript + Vite, deployed on Vercel
@@ -43,7 +51,7 @@ cd backend
 composer install
 cp .env.example .env        # then set DB_* to match docker-compose.yml
 php artisan key:generate
-php artisan migrate
+php artisan migrate --seed  # demo catalog: 129 games, ~700 products, ~2,500 offers
 php artisan serve
 
 # Frontend → http://localhost:5173
@@ -66,6 +74,10 @@ php artisan test
 
 | Service | Config | Notes |
 |---|---|---|
-| Render | [render.yaml](render.yaml), [backend/Dockerfile](backend/Dockerfile) | Migrations run on container start. Secrets (`APP_KEY`, `DB_URL`, `DB_MIGRATION_URL`, `FRONTEND_URL`) are set in the Render dashboard |
+| Render | [render.yaml](render.yaml), [backend/Dockerfile](backend/Dockerfile) | Migrations run on container start under an advisory lock. With `SEED_IF_EMPTY=true`, an empty database is seeded in the background in one transaction (see [ARCHITECTURE.md](docs/ARCHITECTURE.md#seed-data--first-boot)). Secrets (`APP_KEY`, `DB_URL`, `DB_MIGRATION_URL`, `FRONTEND_URL`) are set in the Render dashboard |
 | Vercel | [frontend/vercel.json](frontend/vercel.json) | Root directory `frontend`, env `VITE_API_URL` |
 | Neon | — | Pooled connection string for the app, direct connection string for migrations |
+
+## Data sources
+
+Game titles, descriptions, artwork and retail prices come from the public [Steam Store](https://store.steampowered.com), fetched once with `php artisan catalog:fetch-steam` and committed as `backend/database/data/games.json`. The console platforms for each game are hand-curated. Game data and images are © their respective owners. This is a non-commercial demo, not affiliated with Valve or Eneba. Sellers, offers, prices and keys are generated demo data.

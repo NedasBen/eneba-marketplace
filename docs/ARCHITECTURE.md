@@ -445,25 +445,68 @@ Guests keep a cart in `localStorage`. It is sent to `/cart/merge` right after lo
 
 ---
 
-## Backend layout (planned)
+## Backend layout
+
+Items marked *(planned)* don't exist yet.
 
 ```
 backend/app/
   Http/Controllers/Api/V1/   thin controllers
-  Http/Requests/             FormRequests (validation)
-  Http/Resources/            API Resources (response shape)
-  Models/
-  Services/Catalog/          ProductSearch, ProductStockAggregator
-  Services/Checkout/         CheckoutService (reserve), OrderPaymentService (pay)
-  Services/Payments/         PaymentGateway (interface), SimulatedPaymentGateway, PaymentResult
-  Services/Homepage/         HomepageBlockProvider (interface), HomepageBlockRegistry, Blocks/*
-  Services/Catalog/          SteamStoreClient, SteamGameNormalizer (catalog import)
-  Enums/                     GamePlatform (pc, playstation, xbox, nintendo-switch)
-  Services/Checkout/         ... + ReleaseExpiredReservations (sweep)
-  Console/Commands/          FetchSteamCatalog, RecalculateProductStats, ReleaseExpiredReservations
-backend/database/data/steam-catalog-sources.json   curated app IDs + real platforms
-backend/database/data/games.json                   committed Steam snapshot (generated)
+  Http/Requests/             FormRequests (validation)                                   (planned)
+  Http/Resources/            API Resources (response shape)                              (planned)
+  Models/                    14 Eloquent models (Game, Product, Offer, ProductKey, Order, ...)
+  Enums/                     GamePlatform, ProductKeyStatus, OrderStatus, PaymentStatus, HomepageBlockType
+  Services/Catalog/          SteamStoreClient, SteamGameNormalizer, ProductStockAggregator,
+                             ProductSearch (planned)
+  Services/Checkout/         CheckoutService (reserve), OrderPaymentService (pay),
+                             ReleaseExpiredReservations (sweep)                          (planned)
+  Services/Payments/         PaymentGateway (interface), SimulatedPaymentGateway         (planned)
+  Services/Homepage/         HomepageBlockProvider (interface), HomepageBlockRegistry    (planned)
+  Console/Commands/          FetchSteamCatalog, RecalculateProductStats, MigrateWithLock
+backend/database/
+  data/steam-catalog-sources.json   curated app IDs + real platforms
+  data/games.json                   committed Steam snapshot (generated)
+  seeders/                          DatabaseSeeder → Region, Platform, Seller, Catalog,
+                                    OrderHistory, Homepage (bulk inserts, fixed random seed)
 ```
+
+## Seed data & first boot
+
+`DatabaseSeeder` builds the demo marketplace from `games.json`. A fixed random seed gives the same data on every run:
+
+| | Amount |
+|---|---|
+| Products | 702: one per **real** platform × 1–3 regions, from 129 games |
+| Sellers | 12, with ratings 88.3–99.8% and 8 countries |
+| Offers | 2,472: 2–5 per product, priced from the game's age (older = deeper discount) with platform/region factors and a ±8% spread between sellers; never above retail, always ending in 9 cents |
+| Keys | 10 available per in-stock offer, plus 2,304 sold keys from 1,404 seeded paid orders over the last 90 days (weighted towards well-reviewed, recent PC/EU products) |
+| Edge cases | 5.0% of offers sold out (each with real sales), 3.0% inactive, 14 products (2%) with no purchasable offer |
+| Homepage | 5 blocks (hero, best sellers, deals, new releases, RPG row) and 4 banners linking to in-stock products |
+| Demo login | `demo@example.com` / `password`, with 5 recent paid orders and their keys |
+
+`catalog:recalculate-product-stats --dry-run` after seeding reports **0 drifted products**, because `sold_count` comes from real sold keys.
+
+**Bulk inserts, not factories.** Production seeds over the network to Neon, and Faker is a dev-only dependency that isn't installed in the production image. Seeders therefore use multi-row `INSERT`s (500–1,000 rows each, about 65 statements in total) and PHP's seeded `Random\Randomizer`. Factories are for tests only.
+
+**First boot on Render (`SEED_IF_EMPTY=true`):**
+
+1. `db:migrate-locked` runs migrations while holding a session-level Postgres advisory lock, over the direct Neon connection. Plain `migrate` races when two instances boot against an empty database: one crashes on `CREATE TABLE users`. `migrate --isolated` can't help, because its lock lives in the cache table that doesn't exist yet.
+2. Apache starts **immediately**, while `db:seed` runs in the background. `/up` never touches the database, so the health check passes right away.
+3. The whole seed is **one transaction**:
+   - the API sees either an empty catalog or the complete one, never half;
+   - a failure rolls back, so the next boot simply retries;
+   - `pg_try_advisory_xact_lock` makes a second instance skip;
+   - an already-seeded database is left alone.
+
+**Measured** with two containers booting at once, each limited to Render free-tier resources (`--cpus=0.1 --memory=512m`), against an empty Postgres:
+
+| | |
+|---|---|
+| `/up` returns 200 | after 10.5 s (instance 1) and 12.7 s (instance 2); products visible at that moment: 0 |
+| Seeding | 14.2 s on one instance; the other logged "Another process is seeding the database; skipping." |
+| Result | 702 products / 25,784 keys / 1,404 orders exactly once, both instances healthy, no errors |
+
+Locally (no CPU limit) the same seed takes 2.3 s, so the cost is CPU-bound: AES-encrypting about 28k key codes plus building rows. Network cost to Neon in the same AWS region is small: about 65 statements at a 1–3 ms round trip plus about 10 MB of row data. A remote database should add only a few seconds on top of the measured 14 s.
 
 ## Out of scope (deliberately)
 

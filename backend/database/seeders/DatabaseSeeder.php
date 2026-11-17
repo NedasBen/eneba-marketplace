@@ -2,24 +2,66 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use App\Models\Product;
+use App\Services\Catalog\ProductStockAggregator;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
+/**
+ * Seeds the full demo marketplace in ONE transaction:
+ *  - all-or-nothing: readers see either no catalog or all of it, and a failed
+ *    run leaves the database empty so the next boot simply retries;
+ *  - guarded by a transaction-level advisory lock, so two instances booting
+ *    at once cannot both seed (the loser skips); the lock is released on
+ *    commit/rollback and is safe behind Neon's transaction-mode pooler;
+ *  - refuses to run on a database that already has products.
+ */
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
+    /** Arbitrary application-wide key for pg_try_advisory_xact_lock(). */
+    public const ADVISORY_LOCK_KEY = 2_027_001;
 
-    /**
-     * Seed the application's database.
-     */
     public function run(): void
     {
-        // User::factory(10)->create();
+        $startedAt = microtime(true);
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        $seeded = DB::transaction(function (): bool {
+            if (! DB::scalar('SELECT pg_try_advisory_xact_lock(?)', [self::ADVISORY_LOCK_KEY])) {
+                $this->command?->warn('Another process is seeding the database; skipping.');
+
+                return false;
+            }
+
+            if (Product::query()->exists()) {
+                $this->command?->info('Catalog already seeded; skipping. Use `migrate:fresh --seed` to start over.');
+
+                return false;
+            }
+
+            $this->call([
+                RegionSeeder::class,
+                PlatformSeeder::class,
+                SellerSeeder::class,
+                CatalogSeeder::class,
+                OrderHistorySeeder::class,
+            ]);
+
+            app(ProductStockAggregator::class)->refresh();
+
+            $this->call(HomepageSeeder::class);
+
+            return true;
+        });
+
+        if ($seeded) {
+            $this->command?->info(sprintf(
+                'Seeded %d products, %d offers, %d keys and %d orders in %.1fs.',
+                DB::table('products')->count(),
+                DB::table('offers')->count(),
+                DB::table('product_keys')->count(),
+                DB::table('orders')->count(),
+                microtime(true) - $startedAt,
+            ));
+        }
     }
 }

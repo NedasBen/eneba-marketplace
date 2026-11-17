@@ -1,0 +1,87 @@
+[
+    {
+        "steam_app_id": 1245620,
+        "name": "ELDEN RING",
+        "slug": "elden-ring",
+        "platforms": [
+            "pc",
+            "playstation",
+            "xbox"
+        ],
+        "genres": [
+            "Action",
+            "RPG"
+        ],
+        "short_description": "THE CRITICALLY ACCLAIMED FANTASY ACTION RPG. Rise, Tarnished, and be guided by grace to brandish the power of the Elden Ring and become an Elden Lord in the Lands Between.",
+        "description": "THE CRITICALLY ACCLAIMED FANTASY ACTION RPG\nRise, Tarnished, and be guided by grace to brandish the power of the Elden Ring.• A Breathtaking World Full of Excitement and Mystery\n\nThe Lands Between are part of a vast continent where magnificent open fields and huge dungeons with complex and three-dim",
+        "developer": "FromSoftware, Inc.",
+        "publisher": "FromSoftware, Inc., Bandai Namco Entertainment",
+        "released_at": "2022-02-24",
+        "metacritic": 94,
+        "retail_price_cents": 5999,
+        "cover_image_url": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1245620/library_600x900_2x.jpg",
+        "header_image_url": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1245620/header.jpg?t=1790290043",
+        "hero_image_url": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1245620/library_hero.jpg",
+        "screenshots": [
+            "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1245620/ss_943bf6fe62352757d9070c1d33e50b92fe8539f1.1920x1080.jpg?t=1790290043",
+            "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1245620/ss_dcdac9e4b26ac0ee5248bfd2967d764fd00cdb42.1920x1080.jpg?t=1790290043"
+        ]
+    },
+    {
+        "steam_app_id": 367520,
+        "name": "Hollow Knight",
+        "slug": "hollow-knight",
+        "platforms": [
+            "pc",
+            "playstation",
+            "xbox",
+            "nintendo-switch"
+        ],
+        "genres": [
+            "Action",
+            "Adventure",
+            "Indie"
+        ],
+        "short_description": "Forge your own path in Hollow Knight! An epic action adventure through a vast ruined kingdom of insects and heroes. Explore twisting caverns, battle tainted creatures and befriend bizarre bugs, all in a classic, hand-drawn 2D style.",
+        "description": "Hollow Knight Expands with Free Content\n\nGodmaster - Take your place amongst the Gods. New Characters and Quest. New Boss Fights. Available Now!\n\nLifeblood - A Kingdom Upgraded! New Boss. Upgraded Bosses. Tweaks and Refinements across the whole game.\n\nThe Grimm Troupe - Light the Nightmare Lantern. ",
+        "developer": "Team Cherry",
+        "publisher": "Team Cherry",
+        "released_at": "2017-02-24",
+        "metacritic": 87,
+        "retail_price_cents": 1479,
+        "cover_image_url": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/367520/library_600x900_2x.jpg",
+        "header_image_url": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/367520/3c3489495136b26b34f8a9543c7f5645b99d388c/header.jpg?t=1776125684",
+        "hero_image_url": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/367520/library_hero.jpg",
+        "screenshots": [
+            "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/367520/ss_5384f9f8b96a0b9934b2bc35a4058376211636d2.1920x1080.jpg?t=1776125684",
+            "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/367520/ss_d5b6edd94e77ba6db31c44d8a3c09d807ab27751.1920x1080.jpg?t=1776125684"
+        ]
+    },
+    {
+        "steam_app_id": 1966720,
+        "name": "Lethal Company",
+        "slug": "lethal-company",
+        "platforms": [
+            "pc"
+        ],
+        "genres": [
+            "Action",
+            "Adventure",
+            "Indie"
+        ],
+        "short_description": "A co-op horror about scavenging at abandoned moons to sell scrap to the Company.",
+        "description": "You are a contracted worker for the Company. Your job is to collect scrap from abandoned, industrialized moons to meet the Company's profit quota. You can use the cash you earn to travel to new moons with higher risks and rewards--or you can buy fancy suits and decorations for your ship. Experience ",
+        "developer": "Zeekerss",
+        "publisher": "Zeekerss",
+        "released_at": "2023-10-23",
+        "metacritic": null,
+        "retail_price_cents": 975,
+        "cover_image_url": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1966720/library_600x900_2x.jpg",
+        "header_image_url": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1966720/header.jpg?t=1775380053",
+        "hero_image_url": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1966720/library_hero.jpg",
+        "screenshots": [
+            "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1966720/ss_78075e9a94675823024f12fce9d69b243cca94f8.1920x1080.jpg?t=1775380053",
+            "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1966720/ss_51860be59845771c01a3a4d9ab1ebf773f16fef5.1920x1080.jpg?t=1775380053"
+        ]
+    }
+]

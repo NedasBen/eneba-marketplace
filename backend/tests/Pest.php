@@ -1,6 +1,13 @@
 <?php
 
+use App\Enums\GamePlatform;
+use App\Models\Game;
+use App\Models\Genre;
+use App\Models\Platform;
+use App\Models\Product;
+use App\Models\Region;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /*
@@ -32,3 +39,38 @@ pest()->extend(TestCase::class)
 expect()->extend('toBeOne', function () {
     return $this->toBe(1);
 });
+
+/*
+|--------------------------------------------------------------------------
+| Functions
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * A store product on a real platform/region (reused by slug), for a fresh game
+ * with the given genres. In stock at €19.99 unless overridden.
+ *
+ * @param  list<string>  $genres  genre slugs
+ * @param  array<string, mixed>  $attributes  product attributes
+ * @param  array<string, mixed>  $game  game attributes
+ */
+function catalogProduct(string $platform = 'pc', string $region = 'europe', array $genres = [], array $attributes = [], array $game = []): Product
+{
+    $platformModel = Platform::query()->firstWhere('slug', $platform)
+        ?? Platform::factory()->forPlatform(GamePlatform::from($platform))->create();
+    $regionModel = Region::query()->firstWhere('slug', $region)
+        ?? Region::factory()->create(['slug' => $region, 'name' => Str::upper(str_replace('-', ' ', $region))]);
+
+    $gameModel = Game::factory()->create($game);
+    $gameModel->genres()->attach(array_map(
+        fn (string $slug): int => (Genre::query()->firstWhere('slug', $slug)
+            ?? Genre::factory()->create(['slug' => $slug, 'name' => Str::title(str_replace('-', ' ', $slug))]))->id,
+        $genres,
+    ));
+
+    return Product::factory()
+        ->for($gameModel)
+        ->for($platformModel)
+        ->for($regionModel)
+        ->create(array_replace(['retail_price_cents' => 5999, 'min_price_cents' => 1999, 'offers_count' => 2], $attributes));
+}

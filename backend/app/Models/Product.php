@@ -45,6 +45,19 @@ class Product extends Model
     }
 
     /**
+     * Saving of the cheapest in-stock offer against the retail price, in
+     * whole percent; null when nothing is in stock.
+     */
+    public function discountPercent(): ?int
+    {
+        if ($this->min_price_cents === null || $this->retail_price_cents <= 0) {
+            return null;
+        }
+
+        return max(0, (int) round(100 * ($this->retail_price_cents - $this->min_price_cents) / $this->retail_price_cents));
+    }
+
+    /**
      * @return BelongsTo<Game, $this>
      */
     public function game(): BelongsTo

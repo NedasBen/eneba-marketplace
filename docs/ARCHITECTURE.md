@@ -389,8 +389,32 @@ All responses are JSON. Collections use `{ data, links, meta }` (Laravel paginat
 |---|---|---|---|
 | GET | `/products` | `q`, `platform[]`, `region[]`, `genre[]`, `price_min`, `price_max` (EUR), `in_stock` (bool, default true), `sort` = `relevance\|popularity\|price_asc\|price_desc\|release_date\|name`, `page`, `per_page` (≤ 48) | `200` paginated product cards (name, slug, cover, platform, region, `from` price, discount %, offers_count) |
 | GET | `/products/{slug}` | — | `200` product + game (description, genres, screenshots) + **offers** (cheapest first: seller, rating, price, stock) + other editions of the same game |
-| GET | `/catalog/filters` | Same filter params as `/products` | `200 { platforms[], regions[], genres[] }` each with `count` under the current filters, plus `price: { min, max }` |
+| GET | `/catalog/filters` | Same filter params as `/products` | `200 { platforms[], regions[], genres[] }` each with `count` under the current filters, plus `price: { min, max }`, `sorts[] { value, label }`, `default_sort`, `per_page { options, default }` |
 | GET | `/search/suggestions` | `q` (≥ 2 chars) | `200` up to 8 product cards for the header autocomplete (60/min per IP) |
+
+**Implemented so far:** `/products` (everything except `q` and the `relevance` sort, which come with search) and `/catalog/filters`. Both endpoints use one FormRequest (`ListProductsRequest`) and one query object (`ProductCatalogQuery`). How they work:
+
+- **Filter params:** facet params take `platform[]=pc&platform[]=xbox` or `platform=pc,xbox`. An unknown slug gets a `422` rather than being ignored.
+- **Combining filters:** options within a facet are OR-ed, and facets are AND-ed with each other. Genre uses `WHERE EXISTS`, so a game matching two selected genres appears once.
+- **Price filters and sorts** use the stored `products.min_price_cents`.
+  - Every sort ends with `products.id` as a tie-breaker, so pages are stable.
+  - The price sorts and `release_date` put rows with no value at the end (`NULLS LAST`).
+- **Filter counts:** each facet's counts apply every active filter **except its own**. For example, with PC selected, Xbox still shows how many results adding it would give. The price range likewise ignores the price filter. Options with 0 results are still returned, so the UI can disable them.
+- **Query cost:** a listing page runs 5 queries, whatever its size: the count, the page of products, and three eager loads (game, platform and region, only the columns the card needs). A test checks that 3 and 20 products use the same number of queries, and strict mode makes any lazy load throw in development and tests. `/catalog/filters` runs 7 queries: three facet counts, the price range, and three option lists. Validation adds one `exists` query per slug passed (at most 20 per facet).
+
+Product card:
+
+```json
+{ "id": 1, "name": "ELDEN RING Steam Key EUROPE", "slug": "elden-ring-steam-key-europe",
+  "game": { "name": "ELDEN RING", "slug": "elden-ring", "cover_image_url": "…" },
+  "platform": { "slug": "pc", "name": "PC", "activation_service": "Steam" },
+  "region": { "slug": "europe", "name": "EUROPE" },
+  "price_from": { "amount_cents": 3489, "currency": "EUR" },
+  "retail_price": { "amount_cents": 5999, "currency": "EUR" },
+  "discount_percent": 42, "offers_count": 3, "in_stock": true }
+```
+
+`price_from` and `discount_percent` are `null` when no offer is in stock.
 
 ### Homepage
 

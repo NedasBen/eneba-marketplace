@@ -200,10 +200,9 @@ The diagram omits `timestamps` and Laravel framework tables (`sessions`, `cache`
 
 ### Modelling notes
 
-- **Denormalised product aggregates** (`min_price_cents`, `offers_count`, `sold_count`). The store sorts and filters by "from €X", and computing that as a `MIN()` over offers and keys on every catalog query would be slow. The `ProductStockAggregator` service recomputes these columns inside the same transaction whenever stock changes (reservation, payment, expiry release, seeding).
+- **Denormalised product aggregates** (`min_price_cents`, `offers_count`, `sold_count`). The store sorts and filters by "from €X", and computing that as a `MIN()` over offers and keys on every catalog query would be slow. See [Consistency](#consistency-product-aggregates--reservation-expiry) below.
 - **Snapshots on `order_items`.** The name, seller and price are copied at checkout, so later price changes or deleted offers never alter order history.
 - **Keys are encrypted at rest** using Laravel's `encrypted` cast. They are only returned to the owner of a **paid** order.
-- **Reservations expire lazily.** A key counts as available when `status = 'available'` OR `status = 'reserved' AND reserved_until < now()`. The free tier on Render has no cron worker, so correctness can't depend on a scheduler. A scheduled `orders:expire-pending` command still exists to tidy up rows.
 - **Real platforms only.** A game gets a product only for platforms it is actually sold on, e.g. ELDEN RING → PC, PlayStation, Xbox. Steam can't tell us about consoles, so each game's platforms are curated by hand in `database/data/steam-catalog-sources.json`. A console is listed only when the game is currently sold digitally on that console family. Product names follow Eneba's style: `{game} {activation service} Key {REGION}`, e.g. "ELDEN RING PSN Key EUROPE".
 - **Integrity in the database.** CHECK constraints cover positive prices, cart quantity 1–10 and order quantities. `enum()` columns become CHECK constraints on Postgres. A key's `status`, `order_item_id` and `reserved_until` must agree: an available key has neither, a reserved key has both, and a sold key has an order item.
 - **Seeded data.** Steam supplies the games, genres, descriptions, artwork and retail prices. A seeder generates regions, sellers, offers, fake key codes and plausible `sold_count` values. Steam is credited in the footer and the README.
@@ -217,6 +216,43 @@ The diagram omits `timestamps` and Laravel framework tables (`sessions`, `cache`
 5. Convert descriptions to plain text, then write the file atomically after **every** game. If Steam keeps failing, progress is already saved and the command exits non-zero, so running it again resumes where it stopped. Games removed from the source list are dropped from the output.
 
 Images are hotlinked from `*.steamstatic.com` (allowed in the CSP) rather than committed to the repo.
+
+### Consistency: product aggregates & reservation expiry
+
+**Recompute, don't increment.** `ProductStockAggregator::refresh($productIds)` recalculates all three columns from the source rows (offers and keys) in one `UPDATE … FROM (stats)` statement:
+
+- a key is **in stock** when it is `available`, or `reserved` with `reserved_until < now()`;
+- `min_price_cents` = the cheapest active offer with stock (`null` if none);
+- `offers_count` = the number of such offers;
+- `sold_count` = the number of keys sold.
+
+Because nothing is `+= 1`, running it twice, or for every product at once, always gives the same, correct result. As a consequence, the seeder must create real sold keys (seeded past orders) rather than writing a made-up `sold_count`.
+
+**Where it's called.** It runs inside the same database transaction as every write that changes stock:
+
+| Write | Products refreshed |
+|---|---|
+| Checkout reserves keys | Products in the cart |
+| Payment succeeds (keys → `sold`) | Products in the order |
+| Expired reservations are released (sweep below) | Products of the released keys |
+| Seeding / key import / offer price or `is_active` change | Affected products |
+
+**Failure halfway.** If anything in the transaction fails (a payment exception, a constraint violation, a lost connection), the stock change and the aggregate update roll back together, so a failure can't leave them out of step. Drift can only come from writes that bypass the service (manual SQL, a future code path that forgets to call it).
+
+**Concurrent writers.** `refresh()` first locks the product rows (`SELECT … FOR UPDATE`, ordered by id to avoid deadlocks), and only then runs the `UPDATE`. Under Postgres' default READ COMMITTED isolation, each statement sees a fresh snapshot. A concurrent checkout touching the same product has therefore either committed (and its keys are counted) or is waiting on the lock. Computing first and locking second could overwrite newer stats with stale ones.
+
+**Repairing drift.** `php artisan catalog:recalculate-product-stats [--dry-run]` lists drifted products (stored → actual) and fixes them. Only rows that differ are written, and the command is safe to run at any time.
+
+**Releasing expired reservations without cron.** Render's free tier has no scheduler or queue worker, so expiry is designed in two layers:
+
+1. **Lazy expiry keeps money and keys correct.** Checkout picks keys with `status = 'available' OR (status = 'reserved' AND reserved_until < now())` using `FOR UPDATE SKIP LOCKED`, so an expired hold is free stock the moment it expires, with no background job involved. Payment locks the order row and rejects it once `expires_at` has passed (`410`). It then marks keys sold with `WHERE order_item_id = <this order's items> AND status = 'reserved'` and requires the affected row count to equal the quantity, otherwise it rolls back. A late payment can therefore never take keys another buyer has already claimed, and a key is never sold twice.
+2. **A sweep keeps stored state tidy.** Lazy expiry alone leaves two cosmetic gaps: orders stay `pending` in the database, and product aggregates show an offer as sold out until something recomputes them. `ReleaseExpiredReservations` fixes both in one transaction: pending orders past `expires_at` → `expired`, their reserved keys → `available`, then a refresh of the affected products. It runs:
+   - at the start of every checkout;
+   - on catalog reads, throttled to at most once a minute (a cache lock), which is cheap thanks to the partial index on pending `expires_at`;
+   - from `routes/console.php` every minute wherever a scheduler exists (`php artisan schedule:work` locally);
+   - optionally from a free external pinger (e.g. a GitHub Actions cron calling a token-protected endpoint), which is not needed for correctness.
+   
+   While the Render instance sleeps nobody can see stale data, and the first request after it wakes runs the sweep. Order API responses also report a pending order past `expires_at` as `expired`, even before the sweep has written it.
 
 ---
 
@@ -423,7 +459,8 @@ backend/app/
   Services/Homepage/         HomepageBlockProvider (interface), HomepageBlockRegistry, Blocks/*
   Services/Catalog/          SteamStoreClient, SteamGameNormalizer (catalog import)
   Enums/                     GamePlatform (pc, playstation, xbox, nintendo-switch)
-  Console/Commands/          FetchSteamCatalog, ExpirePendingOrders
+  Services/Checkout/         ... + ReleaseExpiredReservations (sweep)
+  Console/Commands/          FetchSteamCatalog, RecalculateProductStats, ReleaseExpiredReservations
 backend/database/data/steam-catalog-sources.json   curated app IDs + real platforms
 backend/database/data/games.json                   committed Steam snapshot (generated)
 ```

@@ -1,6 +1,6 @@
 import { keepPreviousData, queryOptions, useQuery } from '@tanstack/react-query'
 import { apiGet } from './client'
-import type { CatalogFilters, ProductListParams, ProductListResponse, SuggestResponse } from './types'
+import type { CatalogFilters, HomepageBlock, ProductListParams, ProductListResponse, SuggestResponse } from './types'
 
 export const SUGGEST_MIN_LENGTH = 2
 
@@ -20,6 +20,14 @@ export const catalogQueries = {
       staleTime: 5 * 60_000,
     }),
 
+  homepage: () =>
+    queryOptions({
+      queryKey: ['homepage'],
+      queryFn: ({ signal }) => apiGet<{ data: HomepageBlock[] }>('/homepage', undefined, signal),
+      select: (response) => response.data,
+      staleTime: 60_000,
+    }),
+
   suggestions: (query: string) =>
     queryOptions({
       queryKey: ['search-suggest', query],
@@ -37,6 +45,10 @@ export function useProducts(params: ProductListParams) {
 
 export function useCatalogFilters(params?: Omit<ProductListParams, 'sort' | 'page' | 'per_page'>) {
   return useQuery(catalogQueries.filters(params))
+}
+
+export function useHomepage() {
+  return useQuery(catalogQueries.homepage())
 }
 
 export function useSearchSuggestions(query: string) {

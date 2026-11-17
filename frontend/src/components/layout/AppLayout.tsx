@@ -9,7 +9,7 @@ export function AppLayout() {
         Skip to content
       </a>
       <Header />
-      <main id="main" className="mx-auto w-full max-w-page flex-1 px-4 py-6">
+      <main id="main" className="w-full flex-1">
         <Outlet />
       </main>
       <Footer />

@@ -1,6 +1,5 @@
 <?php
 
-use App\Enums\HomepageBlockType;
 use App\Enums\ProductKeyStatus;
 use App\Models\Banner;
 use App\Models\Game;
@@ -105,11 +104,11 @@ it('seeds the homepage layout and banners that link to in-stock products', funct
     seedFixtureMarketplace();
 
     expect(HomepageBlock::query()->orderBy('position')->pluck('type')->all())->toBe([
-        HomepageBlockType::HeroBanner,
-        HomepageBlockType::BestSellers,
-        HomepageBlockType::Deals,
-        HomepageBlockType::NewReleases,
-        HomepageBlockType::GenreRail,
+        'hero_banner',
+        'best_sellers',
+        'deals',
+        'new_releases',
+        'genre_rail',
     ]);
 
     $banners = Banner::query()->with('product')->get();

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Container } from '../../components/layout/Container'
 import { Badge } from '../../components/ui/Badge'
 import { Button, ButtonLink } from '../../components/ui/Button'
 import { PriceTag } from '../../components/ui/PriceTag'
@@ -126,7 +127,7 @@ function LiveProducts() {
 /** Not linked from the UI: compare these against eneba.com before building pages. */
 export function ComponentsPage() {
   return (
-    <div className="flex flex-col gap-8">
+    <Container className="flex flex-col gap-8 py-6">
       <title>Components | Eneba Marketplace</title>
       <meta name="robots" content="noindex" />
 
@@ -228,6 +229,6 @@ export function ComponentsPage() {
       <Section title="Product cards (live from GET /api/v1/products)">
         <LiveProducts />
       </Section>
-    </div>
+    </Container>
   )
 }

@@ -70,6 +70,40 @@ export interface CatalogFilters {
   per_page: { options: number[]; default: number }
 }
 
+/**
+ * A homepage block. `layout` picks the component; `data` depends on it and is
+ * validated by that component (an unknown layout or malformed data renders
+ * nothing).
+ */
+export interface HomepageBlock {
+  id: number
+  type: string
+  layout: string
+  title: string
+  data: unknown
+}
+
+export interface HeroSlide {
+  id: number
+  title: string
+  subtitle: string | null
+  image_url: string
+  cover_image_url: string | null
+  cta_label: string
+  product_slug: string | null
+  price_from: Money | null
+}
+
+export interface HeroBlockData {
+  slides: HeroSlide[]
+}
+
+export interface ProductRailData {
+  products: ProductCard[]
+  /** Store query for "See all", e.g. "?genre=rpg"; null hides the button. */
+  see_all: string | null
+}
+
 export interface GameSuggestion {
   name: string
   slug: string

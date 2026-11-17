@@ -176,7 +176,7 @@ erDiagram
     }
     homepage_blocks {
         bigint id PK
-        string type "hero_banner | best_sellers | deals | new_releases | genre_rail"
+        string type "provider key: hero_banner, best_sellers, ... (no enum)"
         string title
         smallint position
         boolean is_active
@@ -474,10 +474,43 @@ Product card:
 
 | Method | Path | Success |
 |---|---|---|
-| GET | `/homepage` | `200` ordered layout: `[{ id, type, title }]` from active `homepage_blocks` |
-| GET | `/homepage/blocks/{id}` | `200 { id, type, title, data }`. `data` comes from the block's own provider: `hero_banner` → `banners` table, `best_sellers` → `products.sold_count`, `deals` → largest `retail_price` vs `min_price` discount, `new_releases` → `games.released_at`, `genre_rail` → genre from `settings` |
+| GET | `/homepage` | `200 { data: [{ id, type, layout, title, data }] }`: active blocks in `position` order. `layout` is `hero` (`data.slides[]`) or `product_rail` (`data.products[]` as product cards, plus `data.see_all`, a store query or `null`) |
 
-Each block is fetched separately, so blocks load in parallel and a failing block only hides itself. On the backend, each `type` maps to a class implementing `HomepageBlockProvider`, registered in a `HomepageBlockRegistry`. The frontend maps `type` to a component and contains no hardcoded content.
+**One request, isolated providers.** An earlier design fetched each block separately. A single endpoint was chosen instead: one round trip matters on a free tier that has to wake up, and the whole response can be cached. The price is that one slow block could delay the page, so each provider is fenced off:
+- Each provider runs in its **own transaction with `SET LOCAL statement_timeout`**, 500ms by default (`HOMEPAGE_BLOCK_TIMEOUT_MS`). Postgres cancels a slower query with SQLSTATE `57014`, and the setting ends with the transaction, which keeps it safe behind Neon's pooler.
+- A provider that **throws or times out** is skipped and logged (`Homepage block skipped: provider failed / timed out`, with block id, type and exception), and the rest of the page is served.
+- A row whose `type` has no provider is skipped and logged. A block with nothing to show is left out.
+- The full response is cached for **60s**. A response missing a block (failed or timed out) is cached for only **5s**, so one hiccup doesn't hide a block for a minute.
+
+| Type | Provider | Layout | Content |
+|---|---|---|---|
+| `hero_banner` | `HeroBannerBlock` | hero | Active banners whose `starts_at`/`ends_at` window includes now, by position, with the product link, "from" price and the game's cover for the side tiles |
+| `best_sellers` | `BestSellersBlock` | product_rail | In-stock products by `sold_count`. See all: `?sort=popularity` |
+| `deals` | `DealsBlock` | product_rail | In-stock products with a discount ≥ `settings.min_discount_percent` (default 30), biggest discount first. No "See all", because the store can't sort by discount |
+| `new_releases` | `NewReleasesBlock` | product_rail | Released games, newest first, **one product per game** (`DISTINCT ON (game_id)`, best-selling in-stock product). See all: `?sort=release_date` |
+| `genre_rail` | `GenreRailBlock` | product_rail | Best sellers in `settings.genre`, one product per game. A missing or unknown genre leaves the block out. See all: `?genre=…` |
+
+Rails share `ProductRailBlock`, which applies `settings.limit` (default 12, max 24) and the card eager loads.
+
+**Discovery.**
+- `HomepageBlockRegistry` scans `app/Services/Homepage/Blocks/` for concrete classes implementing `HomepageBlockProvider`, keyed by their static `type()`. Two providers claiming the same type fail loudly.
+- `php artisan homepage:cache` writes the `type => class` map to `bootstrap/cache/homepage-blocks.php`, and production then reads that file instead of scanning. Through Laravel's `optimizes()` hook it runs as part of `php artisan optimize`, which the container runs on every start, and `optimize:clear` removes it.
+- `homepage_blocks.type` is a plain string (its CHECK constraint was dropped), so no new type needs a migration.
+
+**Adding a block type without touching existing code.** Take "Top rated" as an example:
+1. Add `app/Services/Homepage/Blocks/TopRatedBlock.php` with `type(): 'top_rated'` and either `layout(): 'product_rail'` or a new layout. Extending `ProductRailBlock` means writing only `products()` and `seeAllQuery()`. It's discovered automatically.
+2. Insert a `homepage_blocks` row (`type = 'top_rated'`, title, position, settings). That's configuration, not code.
+3. Frontend:
+   - **an existing layout needs nothing**;
+   - a new layout needs one file, `frontend/src/pages/home/blocks/<layout>.tsx`, default-exporting a component. `registry.ts` picks it up with `import.meta.glob`, using the file name as the layout.
+4. Add one test file for the provider.
+
+**Frontend.**
+- `HomePage` renders `blockComponentFor(block.layout)` for each block. An unknown layout is skipped (with a `console.warn` in development), and each component checks its `data` with a guard (`blockData.ts`), rendering nothing if the shape is wrong.
+- **`hero`** follows eneba.com: a wide main slide with a yellow call-to-action and the "from" price, and portrait tiles for the other promotions on desktop.
+  - It rotates every 6s, pausing on hover or keyboard focus and via a pause button, and never auto-rotates for users who prefer reduced motion.
+  - Its markup follows the WAI-ARIA carousel pattern (`aria-roledescription`, inactive slides `inert`).
+- **`product_rail`** is a titled, horizontally scrolling, snapping row of `ProductCard`s with arrow buttons and a "See all" button. Rails alternate between `bg-band` (`#311178`, sampled from eneba.com) and the page purple.
 
 ### Cart 🔒
 
@@ -592,15 +625,18 @@ backend/app/
   Http/Requests/             ListProductsRequest, SuggestGamesRequest
   Http/Resources/            ProductCardResource
   Models/                    14 Eloquent models (Game, Product, Offer, ProductKey, Order, ...)
-  Enums/                     GamePlatform, ProductSort, ProductKeyStatus, OrderStatus, PaymentStatus, HomepageBlockType
+  Enums/                     GamePlatform, ProductSort, ProductKeyStatus, OrderStatus, PaymentStatus
   Services/Catalog/          SteamStoreClient, SteamGameNormalizer, ProductStockAggregator,
                              CatalogFilters, ProductCatalogQuery
   Services/Search/           GameSearch, GameSearchText, QueryCorrector, SearchTerm, SearchVocabulary
   Services/Checkout/         CheckoutService (reserve), OrderPaymentService (pay),
                              ReleaseExpiredReservations (sweep)                          (planned)
   Services/Payments/         PaymentGateway (interface), SimulatedPaymentGateway         (planned)
-  Services/Homepage/         HomepageBlockProvider (interface), HomepageBlockRegistry    (planned)
-  Console/Commands/          FetchSteamCatalog, RecalculateProductStats, MigrateWithLock
+  Services/Homepage/         HomepageBlockProvider (interface), ProductRailBlock (base),
+                             HomepageBlockRegistry (discovery), HomepageBuilder (timeouts, isolation, cache)
+  Services/Homepage/Blocks/  HeroBanner, BestSellers, Deals, NewReleases, GenreRail (one class per block type)
+  Console/Commands/          FetchSteamCatalog, RecalculateProductStats, MigrateWithLock,
+                             CacheHomepageBlocks (homepage:cache), ClearHomepageBlocks (homepage:clear)
 backend/database/
   data/steam-catalog-sources.json   curated app IDs + real platforms
   data/games.json                   committed Steam snapshot (generated)

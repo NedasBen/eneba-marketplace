@@ -18,11 +18,7 @@ class ProductController extends Controller
         $filters = $request->catalogFilters();
 
         $products = $catalog->products($filters)
-            ->with([
-                'game:id,name,slug,cover_image_url',
-                'platform:id,slug,name,activation_service',
-                'region:id,slug,name',
-            ])
+            ->forCard()
             ->paginate($filters->perPage)
             ->withQueryString();
 

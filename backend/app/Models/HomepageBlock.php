@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Enums\HomepageBlockType;
 use Database\Factories\HomepageBlockFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -29,7 +28,6 @@ class HomepageBlock extends Model
     protected function casts(): array
     {
         return [
-            'type' => HomepageBlockType::class,
             'position' => 'integer',
             'is_active' => 'boolean',
             'settings' => 'array',

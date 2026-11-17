@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\Homepage\HomepageBlockRegistry;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -15,7 +16,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // One registry per request/process, so discovered providers are resolved once.
+        $this->app->singleton(HomepageBlockRegistry::class);
     }
 
     /**
@@ -29,5 +31,8 @@ class AppServiceProvider extends ServiceProvider
 
         // Autocomplete fires on keystrokes: generous, but bounded per client.
         RateLimiter::for('search', fn (Request $request): Limit => Limit::perMinute(60)->by($request->ip()));
+
+        // `optimize` caches the discovered homepage block providers, `optimize:clear` removes them.
+        $this->optimizes(optimize: 'homepage:cache', clear: 'homepage:clear', key: 'homepage-blocks');
     }
 }

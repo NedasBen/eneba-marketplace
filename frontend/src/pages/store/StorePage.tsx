@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
+import { Container } from '../../components/layout/Container'
 import { Button, ButtonLink } from '../../components/ui/Button'
 import { Pagination } from '../../components/ui/Pagination'
 import { ProductCard } from '../../components/ui/ProductCard'
@@ -73,7 +74,7 @@ export function StorePage() {
   const title = state.q ? `Results for “${state.q}”` : 'Buy the best games for less'
 
   return (
-    <div className="flex flex-col gap-5">
+    <Container className="flex flex-col gap-5 py-6">
       <title>{`${state.q ? `${state.q} – search` : 'Store'} | Eneba Marketplace`}</title>
 
       <div className="flex flex-col gap-2">
@@ -196,6 +197,6 @@ export function StorePage() {
       <FilterDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} resultCount={meta?.total}>
         <FilterPanel state={state} facets={facets} onChange={commit} />
       </FilterDrawer>
-    </div>
+    </Container>
   )
 }

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Database\Factories\ProductFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -42,6 +43,20 @@ class Product extends Model
             'offers_count' => 'integer',
             'sold_count' => 'integer',
         ];
+    }
+
+    /**
+     * Eager loads exactly what ProductCardResource reads (store, homepage rails).
+     *
+     * @param  Builder<Product>  $query
+     */
+    public function scopeForCard(Builder $query): void
+    {
+        $query->with([
+            'game:id,name,slug,cover_image_url',
+            'platform:id,slug,name,activation_service',
+            'region:id,slug,name',
+        ]);
     }
 
     /**

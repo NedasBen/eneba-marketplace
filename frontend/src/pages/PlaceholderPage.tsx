@@ -1,4 +1,5 @@
 import { useParams } from 'react-router'
+import { Container } from '../components/layout/Container'
 import { ButtonLink } from '../components/ui/Button'
 
 /** Temporary route content until each page is built. */
@@ -7,7 +8,7 @@ export function PlaceholderPage({ title, description }: { title: string; descrip
   const detail = Object.values(params).filter(Boolean).join(' / ')
 
   return (
-    <section className="flex flex-col items-start gap-3 py-6">
+    <Container className="flex flex-col items-start gap-3 py-6">
       <title>{`${title} | Eneba Marketplace`}</title>
       <h1 className="text-3xl font-extrabold">{title}</h1>
       {detail && <p className="font-semibold text-soft">{detail}</p>}
@@ -15,7 +16,7 @@ export function PlaceholderPage({ title, description }: { title: string; descrip
       <ButtonLink to="/store" variant="secondary">
         Browse the store
       </ButtonLink>
-    </section>
+    </Container>
   )
 }
 

@@ -2,7 +2,6 @@
 
 namespace Database\Factories;
 
-use App\Enums\HomepageBlockType;
 use App\Models\HomepageBlock;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -17,7 +16,7 @@ class HomepageBlockFactory extends Factory
     public function definition(): array
     {
         return [
-            'type' => HomepageBlockType::BestSellers,
+            'type' => 'best_sellers',
             'title' => fake()->words(2, true),
             'position' => fake()->numberBetween(1, 20),
             'is_active' => true,

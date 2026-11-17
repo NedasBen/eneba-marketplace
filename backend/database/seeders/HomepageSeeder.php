@@ -2,7 +2,11 @@
 
 namespace Database\Seeders;
 
-use App\Enums\HomepageBlockType;
+use App\Services\Homepage\Blocks\BestSellersBlock;
+use App\Services\Homepage\Blocks\DealsBlock;
+use App\Services\Homepage\Blocks\GenreRailBlock;
+use App\Services\Homepage\Blocks\HeroBannerBlock;
+use App\Services\Homepage\Blocks\NewReleasesBlock;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -20,15 +24,15 @@ class HomepageSeeder extends Seeder
         $now = now();
 
         $blocks = [
-            [HomepageBlockType::HeroBanner, 'Featured', []],
-            [HomepageBlockType::BestSellers, 'Best sellers', ['limit' => 12]],
-            [HomepageBlockType::Deals, 'Top deals', ['limit' => 12, 'min_discount_percent' => 30]],
-            [HomepageBlockType::NewReleases, 'New releases', ['limit' => 12]],
-            [HomepageBlockType::GenreRail, 'Top RPGs', ['limit' => 12, 'genre' => 'rpg']],
+            [HeroBannerBlock::type(), 'Featured', []],
+            [BestSellersBlock::type(), 'Best sellers', ['limit' => 12]],
+            [DealsBlock::type(), 'Top deals', ['limit' => 12, 'min_discount_percent' => 30]],
+            [NewReleasesBlock::type(), 'New releases', ['limit' => 12]],
+            [GenreRailBlock::type(), 'Top RPGs', ['limit' => 12, 'genre' => 'rpg']],
         ];
 
         DB::table('homepage_blocks')->insert(array_map(fn (array $block, int $index): array => [
-            'type' => $block[0]->value,
+            'type' => $block[0],
             'title' => $block[1],
             'position' => $index + 1,
             'is_active' => true,

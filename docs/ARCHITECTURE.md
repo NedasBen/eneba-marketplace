@@ -553,6 +553,33 @@ frontend/src/
 - ↑/↓ move a highlight through the results using `aria-activedescendant`, so focus stays in the input. Enter opens the highlighted game or `/store?q=`, and Escape or a click outside closes the list.
 - When the API corrected the query, it shows "Showing results for **witcher**".
 
+### Store page (`/store`)
+
+**The URL holds all state** (`lib/storeParams.ts`, unit-tested with Vitest):
+- `parseStoreParams` reads `q`, `platform`, `region`, `genre`, `price_min`, `price_max`, `in_stock`, `sort` and `page`. It accepts the comma form and the older `platform[]=` form.
+- Malformed values are dropped before any request: non-slug characters, duplicates, more than 20 values per facet, a non-numeric or out-of-range price, a maximum below the minimum, an unknown sort, `relevance` without `q`, and `page=abc`.
+- `toQueryString` writes the **canonical** form: readable comma lists (`?platform=pc,xbox`), a fixed key order and no defaults. A non-canonical address is replaced on load, without adding a history entry.
+- Every filter change resets `page`. Pagination uses real links, so pages can be opened in a new tab and shared.
+
+**Recovering from bad params in old links:**
+- If `/products` or `/catalog/filters` answers **422**, `withoutInvalidParams` maps Laravel's error keys back onto the state and removes exactly what was rejected. `platform.1` drops the second platform, `price_max` drops that bound, and so on.
+- The URL is then replaced, which changes the query key, so TanStack Query refetches on its own. A notice explains that some filters were removed.
+- If no error maps to anything removable, the page shows the error state with "Reset filters" instead, so it can't retry forever.
+- A link to a page past the end (e.g. `page=999` when there are 29 pages) is moved to the last page.
+
+**Layout** (modelled on eneba.com/store):
+- **Breadcrumb and title.** With `q` the title becomes *Results for "q"*, plus "Showing results for …" from `query.corrected`.
+- **A 270px filter sidebar:** a price range applied on submit or blur; Platform, Region and Genre checkboxes with counts; and an "Include sold-out games" toggle. Options with a count of 0 are greyed out and disabled, unless already selected.
+- **Above the grid:** the result count, removable chips for the active filters with "Clear all", and a native `<select>` for sorting, filled from `/catalog/filters`.
+- **Grid:** 4, 3 or 2 columns of `ProductCard`s, then pagination with gaps (`1 … 4 5 6 … 29`).
+- **Mobile (below 930px):** the sidebar becomes a "Filters (n)" button that opens a native modal `<dialog>`. The browser traps focus, closes it on Escape and returns focus afterwards. Filters apply live, and the footer reads "Show N results".
+
+**Loading, empty and error states:**
+- **First load:** 12 card skeletons and a sidebar skeleton.
+- **Changing filters:** the previous results stay on screen, dimmed, with `aria-busy`.
+- **No results:** "No games match these filters" or *No results for "q"*, with "Clear filters" or "Browse all games".
+- **Network or 5xx error:** a "Try again" button and a note that the free-tier server can take up to a minute to wake up.
+
 ---
 
 ## Backend layout

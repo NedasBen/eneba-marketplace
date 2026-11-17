@@ -1,6 +1,7 @@
 import { createBrowserRouter } from 'react-router'
 import { AppLayout } from '../components/layout/AppLayout'
 import { NotFoundPage, PlaceholderPage } from '../pages/PlaceholderPage'
+import { StorePage } from '../pages/store/StorePage'
 import { RequireAuth } from './RequireAuth'
 
 /** Routes from docs/ARCHITECTURE.md ("Frontend routes"). */
@@ -9,7 +10,7 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: <PlaceholderPage title="Home" description="Homepage blocks (banner, best sellers, deals) come next." /> },
-      { path: 'store', element: <PlaceholderPage title="Store" description="Catalog with filters, sorting and search results." /> },
+      { path: 'store', element: <StorePage /> },
       { path: 'product/:slug', element: <PlaceholderPage title="Product" description="Product details and seller offers." /> },
       { path: 'cart', element: <PlaceholderPage title="Cart" description="Your cart." /> },
       { path: 'login', element: <PlaceholderPage title="Log in" description="Sign in to check out and see your orders." /> },

@@ -74,7 +74,7 @@ php artisan test
 
 | Service | Config | Notes |
 |---|---|---|
-| Render | [render.yaml](render.yaml), [backend/Dockerfile](backend/Dockerfile) | Migrations run on container start under an advisory lock. With `SEED_IF_EMPTY=true`, an empty database is seeded in the background in one transaction (see [ARCHITECTURE.md](docs/ARCHITECTURE.md#seed-data--first-boot)). Secrets (`APP_KEY`, `DB_URL`, `DB_MIGRATION_URL`, `FRONTEND_URL`) are set in the Render dashboard |
+| Render | [render.yaml](render.yaml), [backend/Dockerfile](backend/Dockerfile) | Migrations run on container start under an advisory lock. With `SEED_IF_EMPTY=true`, an empty database is seeded in the background in one transaction over the direct connection (see [ARCHITECTURE.md](docs/ARCHITECTURE.md#seed-data--first-boot)). The app uses Neon's pooled endpoint with emulated prepares ([why](docs/ARCHITECTURE.md#neons-pooler-and-pdo)). Secrets (`APP_KEY`, `DB_URL`, `DB_MIGRATION_URL`, `FRONTEND_URL`) are set in the Render dashboard |
 | Vercel | [frontend/vercel.json](frontend/vercel.json) | Root directory `frontend`, env `VITE_API_URL` |
 | Neon | — | Pooled connection string for the app, direct connection string for migrations |
 

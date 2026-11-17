@@ -2,6 +2,10 @@
 
 A marketplace for digital game keys in the style of eneba.com. A React SPA calls a versioned Laravel REST API, and the API is backed by PostgreSQL.
 
+**Live:**
+- Frontend: https://eneba-marketplace-coral.vercel.app
+- API: https://eneba-marketplace-api-b54c.onrender.com. Render added the `-b54c` suffix, so the service name in `render.yaml` and the hostname differ.
+
 ```mermaid
 flowchart LR
     U[Browser] --> FE["frontend/<br/>React + TS + Vite<br/>(Vercel)"]
@@ -20,6 +24,7 @@ flowchart LR
 | Catalog data | Steam Store `appdetails` fetched once into a committed JSON seed | Real titles, descriptions and artwork without an API key; seeding and deploys never call Steam |
 | Money | Integer cents, single currency EUR | No float rounding; multi-currency is out of scope |
 | Local dev | Postgres in Docker; XAMPP PHP 8.2 (`pdo_pgsql` enabled) | Databases `eneba` (dev) and `eneba_test` (tests, real `pg_trgm`) |
+| DB connections | App: Neon's **pooled** endpoint (`DB_URL`) with **emulated prepares**. Migrations and seeding: the **direct** endpoint (`DB_MIGRATION_URL`, connection `pgsql_direct`) | Server-side prepared statements silently break transactions behind PgBouncer; see [Neon's pooler and PDO](#neons-pooler-and-pdo) |
 
 ---
 
@@ -665,7 +670,7 @@ backend/database/
 **First boot on Render (`SEED_IF_EMPTY=true`):**
 
 1. `db:migrate-locked` runs migrations while holding a session-level Postgres advisory lock, over the direct Neon connection. Plain `migrate` races when two instances boot against an empty database: one crashes on `CREATE TABLE users`. `migrate --isolated` can't help, because its lock lives in the cache table that doesn't exist yet.
-2. Apache starts **immediately**, while `db:seed` runs in the background. `/up` never touches the database, so the health check passes right away.
+2. Apache starts **immediately**, while `db:seed --database=pgsql_direct` runs in the background on the direct connection. `/up` never touches the database, so the health check passes right away. If seeding fails, the log contains a `Database seeding failed` entry (connection, host, SQLSTATE, exception, and a hint when the SQLSTATE is 25P02), and the start-up script prints `Background seeding FAILED`.
 3. The whole seed is **one transaction**:
    - the API sees either an empty catalog or the complete one, never half;
    - a failure rolls back, so the next boot simply retries;
@@ -681,6 +686,49 @@ backend/database/
 | Result | 702 products / 25,784 keys / 1,404 orders exactly once, both instances healthy, no errors |
 
 Locally (no CPU limit) the same seed takes 2.3 s, so the cost is CPU-bound: AES-encrypting about 28k key codes plus building rows. Network cost to Neon in the same AWS region is small: about 65 statements at a 1–3 ms round trip plus about 10 MB of row data. A remote database should add only a few seconds on top of the measured 14 s.
+
+### Neon's pooler and PDO
+
+**Incident.** The first production seed failed with:
+
+```
+SQLSTATE[25P02]: current transaction is aborted, commands ignored until end of transaction block
+SQL: select exists(select * from "products")
+```
+
+The same failure also hit **every homepage block**: the homepage returned HTTP 200 with zero blocks, because each provider runs in its own transaction.
+
+**Cause** (reproduced locally against PgBouncer 1.24 in transaction mode, the same as Neon's `-pooler` endpoint):
+1. `pdo_pgsql` uses server-side prepared statements by default (`pdo_stmt_00000001`, …). When a statement object is freed, it sends a SQL `DEALLOCATE pdo_stmt_…` and **ignores the result**.
+2. PgBouncer's prepared-statement support renames prepared statements on the server, and doesn't translate SQL-level `DEALLOCATE`. So the server answers `prepared statement "pdo_stmt_00000002" does not exist`.
+3. Outside a transaction, that error is harmless. Inside one, it aborts the transaction, so the *next* statement fails with 25P02.
+4. The error was never visible to PHP. The Postgres server log showed it:
+
+   ```
+   ERROR:  prepared statement "pdo_stmt_00000002" does not exist
+   STATEMENT:  DEALLOCATE pdo_stmt_00000002
+   ERROR:  current transaction is aborted, commands ignored until end of transaction block
+   STATEMENT:  select exists(select * from "products") as "exists"
+   ```
+
+Migrations worked because they use the direct endpoint, where statement names are real.
+
+**Fix:**
+- **Emulated prepares** (`PDO::ATTR_EMULATE_PREPARES`, `DB_EMULATE_PREPARES`, default on) on both Postgres connections. PDO interpolates the escaped values itself and never creates a server-side prepared statement, so there's no `DEALLOCATE` to fail.
+- `App\Database\PostgresConnection` binds booleans as `'true'`/`'false'`. Laravel's 0/1 is otherwise inlined as an integer literal, which Postgres rejects for `boolean` columns.
+- Seeding uses the direct `pgsql_direct` connection, like migrations.
+- **Verified:** with the production image, PgBouncer in transaction mode and an empty database, the first boot seeds over the direct connection, and the homepage served through the pooler returns all 5 blocks. With the old code the same setup returned 0.
+
+**Tests** (`tests/Feature/Database/PoolerCompatibilityTest.php`):
+- Neither connection leaves a server-side prepared statement in `pg_prepared_statements`. This fails if emulation is switched off.
+- Hostile strings are still escaped.
+- Booleans write to and compare against `boolean` columns without casts. This fails without the binding fix.
+
+`DatabaseSeederTest` reproduces an aborted transaction and checks that the seeder logs the actionable error.
+
+**Audit:** no application code catches a database exception *inside* a transaction.
+- `HomepageBuilder` catches outside `DB::transaction()`, which has already rolled back.
+- `MigrateWithLock` and `PingController` don't use transactions.
 
 ## Out of scope (deliberately)
 

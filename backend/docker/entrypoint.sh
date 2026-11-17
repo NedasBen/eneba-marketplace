@@ -24,8 +24,13 @@ if [ "${SEED_IF_EMPTY:-false}" = "true" ]; then
     # API sees either no catalog or all of it, a second instance skips, an
     # already-seeded database is left alone, and a failed run rolls back so
     # the next boot retries.
+    # Runs on the direct connection (DB_MIGRATION_URL), like migrations: a long
+    # maintenance transaction has no business going through Neon's pooler.
     echo "SEED_IF_EMPTY=true: seeding the demo catalog in the background if the database is empty."
-    php artisan db:seed --force --no-interaction &
+    (
+        php artisan db:seed --force --no-interaction --database=pgsql_direct \
+            || echo "Background seeding FAILED (exit $?); see the 'Database seeding failed' log entry above. It will retry on the next boot."
+    ) &
 fi
 
 exec "$@"

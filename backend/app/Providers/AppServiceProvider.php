@@ -2,8 +2,10 @@
 
 namespace App\Providers;
 
+use App\Database\PostgresConnection;
 use App\Services\Homepage\HomepageBlockRegistry;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Database\Connection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -18,6 +20,9 @@ class AppServiceProvider extends ServiceProvider
     {
         // One registry per request/process, so discovered providers are resolved once.
         $this->app->singleton(HomepageBlockRegistry::class);
+
+        // Boolean-safe bindings for emulated prepares (needed behind Neon's pooler).
+        Connection::resolverFor('pgsql', fn ($pdo, string $database, string $prefix, array $config): PostgresConnection => new PostgresConnection($pdo, $database, $prefix, $config));
     }
 
     /**

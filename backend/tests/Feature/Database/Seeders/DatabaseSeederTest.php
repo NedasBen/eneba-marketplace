@@ -11,8 +11,10 @@ use App\Services\Catalog\ProductStockAggregator;
 use Database\Seeders\CatalogSeeder;
 use Database\Seeders\DatabaseSeeder;
 use Database\Seeders\OrderHistorySeeder;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Seed the full marketplace from a three-game fixture
@@ -126,6 +128,26 @@ it('does not seed a database that already has a catalog', function () {
         ->assertSuccessful();
 
     expect(Product::query()->count())->toBe($productCount);
+});
+
+it('logs an actionable error, not just the symptom, when the transaction was already aborted', function () {
+    Log::spy();
+
+    // Reproduce the production failure mode: an earlier statement fails and is
+    // swallowed, leaving the transaction aborted (25P02 on every later statement).
+    try {
+        DB::statement('SELECT 1 / 0');
+    } catch (QueryException) {
+        // Deliberately swallowed, as pdo_pgsql's failed DEALLOCATE was.
+    }
+
+    expect(fn () => (new DatabaseSeeder)->run())->toThrow(PDOException::class);
+
+    Log::shouldHaveReceived('error')->once()->withArgs(fn (string $message, array $context): bool => str_contains($message, 'Database seeding failed')
+        && $context['sqlstate'] === '25P02'
+        && str_contains($context['hint'], 'earlier statement in this transaction failed')
+        && $context['exception'] instanceof PDOException
+        && $context['connection'] === 'pgsql');
 });
 
 it('skips seeding while another process holds the seeding lock', function () {

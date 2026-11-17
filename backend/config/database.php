@@ -97,6 +97,40 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+            /*
+             * Emulated prepares: required behind Neon's pooled endpoint (PgBouncer
+             * in transaction mode). With server-side prepares, pdo_pgsql frees each
+             * statement with a SQL `DEALLOCATE pdo_stmt_…` whose error it ignores;
+             * PgBouncer renames prepared statements on the server, so that
+             * DEALLOCATE fails, and inside a transaction the silent failure aborts
+             * it (next statement: SQLSTATE 25P02). Values are still escaped by PDO.
+             */
+            'options' => [
+                PDO::ATTR_EMULATE_PREPARES => (bool) env('DB_EMULATE_PREPARES', true),
+            ],
+        ],
+
+        /*
+         * Direct (non-pooled) connection for long-running maintenance work:
+         * seeding and session-level advisory locks. Uses DB_MIGRATION_URL (Neon's
+         * direct endpoint) and falls back to the regular settings locally.
+         */
+        'pgsql_direct' => [
+            'driver' => 'pgsql',
+            'url' => env('DB_MIGRATION_URL', env('DB_URL')),
+            'host' => env('DB_HOST', '127.0.0.1'),
+            'port' => env('DB_PORT', '5432'),
+            'database' => env('DB_DATABASE', 'laravel'),
+            'username' => env('DB_USERNAME', 'root'),
+            'password' => env('DB_PASSWORD', ''),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => env('DB_SSLMODE', 'prefer'),
+            'options' => [
+                PDO::ATTR_EMULATE_PREPARES => (bool) env('DB_EMULATE_PREPARES', true),
+            ],
         ],
 
         'sqlsrv' => [

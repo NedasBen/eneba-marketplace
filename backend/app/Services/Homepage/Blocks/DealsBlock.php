@@ -15,8 +15,6 @@ class DealsBlock extends ProductRailBlock
 {
     public const DEFAULT_MIN_DISCOUNT_PERCENT = 30;
 
-    private const DISCOUNT_SQL = '(products.retail_price_cents - products.min_price_cents) * 100.0 / products.retail_price_cents';
-
     public static function type(): string
     {
         return 'deals';
@@ -28,15 +26,15 @@ class DealsBlock extends ProductRailBlock
 
         return Product::query()
             ->whereNotNull('min_price_cents')
-            ->whereRaw(self::DISCOUNT_SQL.' >= ?', [$minDiscount])
-            ->orderByRaw(self::DISCOUNT_SQL.' DESC')
+            ->whereRaw(Product::DISCOUNT_PERCENT_SQL.' >= ?', [$minDiscount])
+            ->orderByRaw(Product::DISCOUNT_PERCENT_SQL.' DESC')
             ->orderByDesc('sold_count')
             ->orderBy('id');
     }
 
-    /** The store has no "by discount" sort, so there is nothing faithful to link to. */
-    protected function seeAllQuery(HomepageBlock $block): ?string
+    /** The full store, biggest discount first (same ordering as this rail). */
+    protected function seeAllQuery(HomepageBlock $block): string
     {
-        return null;
+        return '?sort=discount';
     }
 }

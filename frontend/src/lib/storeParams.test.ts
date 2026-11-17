@@ -43,6 +43,8 @@ describe('parseStoreParams', () => {
 
   it('accepts known sorts and drops relevance without a query', () => {
     expect(parse('sort=price_asc').sort).toBe('price_asc')
+    // The Deals homepage block links to ?sort=discount.
+    expect(parse('sort=discount').sort).toBe('discount')
     expect(parse('sort=cheapest').sort).toBeUndefined()
     expect(parse('sort=relevance').sort).toBeUndefined()
     expect(parse('q=witcher&sort=relevance').sort).toBe('relevance')

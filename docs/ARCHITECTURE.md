@@ -441,7 +441,7 @@ All responses are JSON. Collections use `{ data, links, meta }` (Laravel paginat
 
 | Method | Path | Body / Query | Success |
 |---|---|---|---|
-| GET | `/products` | `q`, `platform[]`, `region[]`, `genre[]`, `price_min`, `price_max` (EUR), `in_stock` (bool, default true), `sort` = `relevance\|popularity\|price_asc\|price_desc\|release_date\|name`, `page`, `per_page` (≤ 48) | `200` paginated product cards (name, slug, cover, platform, region, `from` price, discount %, offers_count) |
+| GET | `/products` | `q`, `platform[]`, `region[]`, `genre[]`, `price_min`, `price_max` (EUR), `in_stock` (bool, default true), `sort` = `relevance\|popularity\|price_asc\|price_desc\|discount\|release_date\|name` (`discount` = biggest percentage saved against retail first, sold-out last, ties by sales), `page`, `per_page` (≤ 48) | `200` paginated product cards (name, slug, cover, platform, region, `from` price, discount %, offers_count) |
 | GET | `/products/{slug}` | — | `200` product + game (description, genres, screenshots) + **offers** (cheapest first: seller, rating, price, stock) + other editions of the same game |
 | GET | `/catalog/filters` | Same filter params as `/products` | `200 { platforms[], regions[], genres[] }` each with `count` under the current filters, plus `price: { min, max }`, `sorts[] { value, label }`, `default_sort`, `per_page { options, default }` |
 | GET | `/search/suggest` | `q` (≥ 2 characters, otherwise `data: []`) | `200 { data, query }`: up to 8 **games** (name, slug, cover, cheapest in-stock `price_from`, `platforms` with stock, `product_slug` of the cheapest in-stock product, `in_stock`). 60/min per IP |
@@ -486,7 +486,7 @@ Product card:
 |---|---|---|---|
 | `hero_banner` | `HeroBannerBlock` | hero | Active banners whose `starts_at`/`ends_at` window includes now, by position, with the product link, "from" price and the game's cover for the side tiles |
 | `best_sellers` | `BestSellersBlock` | product_rail | In-stock products by `sold_count`. See all: `?sort=popularity` |
-| `deals` | `DealsBlock` | product_rail | In-stock products with a discount ≥ `settings.min_discount_percent` (default 30), biggest discount first. No "See all", because the store can't sort by discount |
+| `deals` | `DealsBlock` | product_rail | In-stock products with a discount ≥ `settings.min_discount_percent` (default 30), biggest discount first. See all: `?sort=discount` (the store sort shares the same formula, `Product::DISCOUNT_PERCENT_SQL`) |
 | `new_releases` | `NewReleasesBlock` | product_rail | Released games, newest first, **one product per game** (`DISTINCT ON (game_id)`, best-selling in-stock product). See all: `?sort=release_date` |
 | `genre_rail` | `GenreRailBlock` | product_rail | Best sellers in `settings.genre`, one product per game. A missing or unknown genre leaves the block out. See all: `?genre=…` |
 

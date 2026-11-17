@@ -22,7 +22,7 @@ export type FacetKey = 'platform' | 'region' | 'genre'
 
 export const FACET_KEYS: FacetKey[] = ['platform', 'region', 'genre']
 
-const SORTS: ProductSortValue[] = ['relevance', 'popularity', 'price_asc', 'price_desc', 'release_date', 'name']
+const SORTS: ProductSortValue[] = ['relevance', 'popularity', 'price_asc', 'price_desc', 'discount', 'release_date', 'name']
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const MAX_FACET_VALUES = 20
 const MAX_QUERY_LENGTH = 100

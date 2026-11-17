@@ -123,9 +123,28 @@ it('sorts products', function (string $sort, array $expectedNames) {
     'popularity, ties broken by id' => ['popularity', ['Alpha', 'Delta', 'Bravo', 'Charlie']],
     'price ascending, unpriced last' => ['price_asc', ['Alpha', 'Charlie', 'Bravo', 'Delta']],
     'price descending, unpriced last' => ['price_desc', ['Bravo', 'Charlie', 'Alpha', 'Delta']],
+    // All four share a €59.99 retail price: Alpha -83%, Charlie -67%, Bravo -50%, Delta sold out.
+    'biggest discount first, sold out last' => ['discount', ['Alpha', 'Charlie', 'Bravo', 'Delta']],
     'newest release first, undated last' => ['release_date', ['Alpha', 'Charlie', 'Bravo', 'Delta']],
     'name' => ['name', ['Alpha', 'Bravo', 'Charlie', 'Delta']],
 ]);
+
+it('sorts by the percentage saved against each product\'s own retail price, then by sales', function () {
+    catalogProduct(attributes: ['name' => 'Half price, rarely sold', 'retail_price_cents' => 1000, 'min_price_cents' => 500, 'sold_count' => 1]);
+    catalogProduct(attributes: ['name' => 'Two thirds off', 'retail_price_cents' => 6000, 'min_price_cents' => 2000, 'sold_count' => 0]);
+    catalogProduct(attributes: ['name' => 'Half price, best seller', 'retail_price_cents' => 2000, 'min_price_cents' => 1000, 'sold_count' => 9]);
+    catalogProduct(attributes: ['name' => 'Cheapest, no discount', 'retail_price_cents' => 300, 'min_price_cents' => 300, 'sold_count' => 50]);
+    // Saves €30 (more than any other in euros) but only 30%: must rank by percentage, not amount.
+    catalogProduct(attributes: ['name' => 'Big saving, small percentage', 'retail_price_cents' => 10000, 'min_price_cents' => 7000, 'sold_count' => 0]);
+
+    expect(listedProductNames('sort=discount'))->toBe([
+        'Two thirds off',
+        'Half price, best seller',
+        'Half price, rarely sold',
+        'Big saving, small percentage',
+        'Cheapest, no discount',
+    ]);
+});
 
 it('paginates and keeps the active filters in the page links', function () {
     foreach (range(1, 5) as $number) {

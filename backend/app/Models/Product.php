@@ -46,6 +46,13 @@ class Product extends Model
     }
 
     /**
+     * Saving of the cheapest in-stock offer against retail, in percent, as SQL.
+     * NULL when nothing is in stock; retail is always > 0 (CHECK constraint).
+     * Shared by the store's "discount" sort and the Deals homepage block.
+     */
+    public const DISCOUNT_PERCENT_SQL = '(products.retail_price_cents - products.min_price_cents) * 100.0 / products.retail_price_cents';
+
+    /**
      * Eager loads exactly what ProductCardResource reads (store, homepage rails).
      *
      * @param  Builder<Product>  $query

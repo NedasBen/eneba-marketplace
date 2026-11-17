@@ -13,6 +13,7 @@ enum ProductSort: string
     case Popularity = 'popularity';
     case PriceAsc = 'price_asc';
     case PriceDesc = 'price_desc';
+    case Discount = 'discount';
     case ReleaseDate = 'release_date';
     case Name = 'name';
 
@@ -28,6 +29,7 @@ enum ProductSort: string
             self::Popularity => 'Best selling',
             self::PriceAsc => 'Price: low to high',
             self::PriceDesc => 'Price: high to low',
+            self::Discount => 'Biggest discount',
             self::ReleaseDate => 'Newest releases',
             self::Name => 'Name: A to Z',
         };

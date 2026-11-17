@@ -39,7 +39,7 @@ export interface ProductListResponse {
   query: SearchQueryMeta | null
 }
 
-export type ProductSortValue = 'relevance' | 'popularity' | 'price_asc' | 'price_desc' | 'release_date' | 'name'
+export type ProductSortValue = 'relevance' | 'popularity' | 'price_asc' | 'price_desc' | 'discount' | 'release_date' | 'name'
 
 export interface ProductListParams {
   q?: string

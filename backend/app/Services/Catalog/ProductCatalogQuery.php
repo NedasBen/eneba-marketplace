@@ -42,6 +42,10 @@ class ProductCatalogQuery
             ProductSort::Popularity => $query->orderByDesc('products.sold_count'),
             ProductSort::PriceAsc => $query->orderByRaw('products.min_price_cents ASC NULLS LAST'),
             ProductSort::PriceDesc => $query->orderByRaw('products.min_price_cents DESC NULLS LAST'),
+            // Biggest saving first; sold-out products (no discount) last, then sales.
+            ProductSort::Discount => $query
+                ->orderByRaw(Product::DISCOUNT_PERCENT_SQL.' DESC NULLS LAST')
+                ->orderByDesc('products.sold_count'),
             ProductSort::ReleaseDate => $query
                 ->join('games', 'games.id', '=', 'products.game_id')
                 ->orderByRaw('games.released_at DESC NULLS LAST'),

@@ -71,10 +71,10 @@ describe('deals', function () {
             ->and(railProductNames(DealsBlock::class, ['min_discount_percent' => 60]))->toBe(['75% off']);
     });
 
-    it('has no "See all" link because the store cannot sort by discount', function () {
+    it('links "See all" to the store sorted by biggest discount', function () {
         catalogProduct(attributes: ['retail_price_cents' => 4000, 'min_price_cents' => 1000]);
 
-        expect(app(DealsBlock::class)->data(HomepageBlock::factory()->make(['type' => 'deals']))['see_all'])->toBeNull();
+        expect(app(DealsBlock::class)->data(HomepageBlock::factory()->make(['type' => 'deals']))['see_all'])->toBe('?sort=discount');
     });
 });
 

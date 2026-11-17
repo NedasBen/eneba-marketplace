@@ -92,6 +92,7 @@ it('lists the sort and page-size options so the frontend hardcodes none', functi
             ['value' => 'popularity', 'label' => 'Best selling', 'requires_query' => false],
             ['value' => 'price_asc', 'label' => 'Price: low to high', 'requires_query' => false],
             ['value' => 'price_desc', 'label' => 'Price: high to low', 'requires_query' => false],
+            ['value' => 'discount', 'label' => 'Biggest discount', 'requires_query' => false],
             ['value' => 'release_date', 'label' => 'Newest releases', 'requires_query' => false],
             ['value' => 'name', 'label' => 'Name: A to Z', 'requires_query' => false],
         ])

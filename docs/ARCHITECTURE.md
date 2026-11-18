@@ -429,11 +429,57 @@ sequenceDiagram
   4. `PaymentGateway::charge()`. Every attempt is stored as a `payments` row with the card's last four digits; the number and CVC are never stored or logged.
   5. A decline returns `402 { message, failure_code }`, and the order stays pending so the user can retry.
   6. Success marks the keys `sold` (the affected rows must equal the quantity, otherwise it rolls back), sets the order to `paid` with `paid_at`, deletes the cart lines for the bought offers, and refreshes product stats (`sold_count`).
-- **The charge happens under the lock.** That's fine for the simulated gateway, which answers instantly. A real provider would use payment intents and a webhook instead of a synchronous charge.
+- **The charge happens under the lock.** That's fine for the simulated gateway, which answers instantly. A real provider uses payment intents and a webhook instead of a synchronous charge; see below.
 - **Only the three test cards are accepted.** Any other number that passes the Luhn check gets `422 "This is a demo: use one of the test cards."`, so nobody types a real card into the demo.
 - **Pay is throttled** to 10 attempts a minute per user.
 - **Orders are looked up through the signed-in user.** Another user's reference returns the same `404` as a missing one.
 - **Tested with real locks.** `tests/Concurrency` (its own Pest suite with `DatabaseTruncation`, because it needs committed data) runs a checkout on a second Postgres connection with its transaction left open, then a competing checkout on the first connection. `lock_timeout` makes any lock wait fail the test instead of hanging. Without `SKIP LOCKED`, the competing checkout waits and the test fails.
+
+**With a real payment provider** (Stripe, Adyen, …). The simulated gateway decides inside the request. A real card payment is asynchronous: 3-D Secure, bank delays and retries mean the answer can arrive seconds or minutes later, and only the provider's webhook is authoritative. Checkout and key reservation stay exactly as they are. Payment changes like this:
+
+```mermaid
+sequenceDiagram
+    participant FE as React
+    participant API as Laravel
+    participant PSP as Provider
+    participant DB as Postgres
+    FE->>API: POST /orders/{ref}/pay
+    API->>DB: lock order, check pending + keys still reserved, COMMIT
+    API->>PSP: create PaymentIntent (amount = order snapshot, idempotency key, metadata: reference)
+    API->>DB: store payment (intent id, status processing), order → awaiting_payment
+    API-->>FE: 200 { client_secret }
+    FE->>PSP: confirm with hosted card fields (3-D Secure here)
+    PSP-->>API: webhook payment_intent.succeeded (signed)
+    API->>DB: BEGIN; event seen? → 200. Lock order + reserved keys
+    alt keys still reserved for this order
+        API->>DB: keys → sold, order → paid, clear cart, refresh stats, COMMIT
+    else reservation was lost
+        API->>PSP: refund
+        API->>DB: order → refunded, COMMIT
+    end
+    FE->>API: GET /orders/{ref} (poll until paid)
+```
+
+1. **Card data never touches our server.** The card form becomes the provider's hosted fields (e.g. Stripe Elements). The API only ever sees the intent id and the outcome. This keeps the app at the lightest PCI scope (SAQ A), and our `CardDetails` and test cards go away.
+2. **`POST /orders/{ref}/pay` creates an intent instead of charging.** It locks the order, checks that it is pending and its keys are still reserved, then commits **before** calling the provider (no external call while holding database locks). The intent is created with the order's snapshot total and an idempotency key derived from the order and attempt, so a retried request can't create a second intent. The order moves to `awaiting_payment` and the response carries the `client_secret`.
+3. **Keys stay reserved until the webhook marks them sold.** Nothing is delivered on the browser's word: the success page polls `GET /orders/{ref}` until the webhook has set `paid`. The webhook handler runs today's success transaction unchanged: lock the order, lock and count its reserved keys, mark them sold, clear the bought cart lines, refresh product stats.
+4. **The reservation must outlive the payment attempt.**
+   - The sweep does not release an `awaiting_payment` order the moment `expires_at` passes. It first asks the provider to cancel the intent, then releases the keys.
+   - If cancelling fails because the payment has just succeeded, the order is processed as paid instead.
+   - Every awaiting order also has a hard upper bound (e.g. 30 minutes) so stock can't be held indefinitely.
+5. **A late success can't take someone else's keys.** If a `succeeded` webhook arrives for an order whose keys were released and re-reserved by another buyer, the key count is short as it is today. The handler refunds the payment through the provider and marks the order `refunded`, and the buyer is told. Keys are never sold twice, and money is never kept without delivering keys.
+6. **Webhooks are verified, idempotent and order-independent.**
+   - Every request's signature is checked against the endpoint secret.
+   - Each event id goes into a `webhook_events` table with a unique index, inside the same transaction, so the provider's retries are harmless.
+   - Handlers move the order and payment forward through allowed states only (`processing` → `succeeded`/`failed`), so events that arrive out of order or twice can't undo a payment.
+   - The handler answers `2xx` quickly; anything slow (emails) is queued.
+7. **Declines arrive as `payment_intent.payment_failed`.** They are recorded as today's declined `payments` row. The order goes back to `pending` while its reservation is still valid, so the user can retry with another card.
+8. **Schema changes.**
+   - `payments` gets `provider_intent_id` (unique) and the statuses `processing`, `succeeded`, `failed` and `refunded`.
+   - `orders` gets `awaiting_payment` and `refunded`.
+   - A new `webhook_events` table holds `provider`, `event_id` (unique), `type` and `processed_at`.
+
+   `PaymentGateway` grows from `charge()` to `createIntent()`, `cancelIntent()`, `refund()` and `parseWebhook()`, and `SimulatedPaymentGateway` can mimic that flow in tests by posting signed fake webhooks.
 
 
 **Simulated test cards** (Luhn-validated, any future expiry, any 3-digit CVC):
@@ -635,7 +681,7 @@ Every endpoint returns the whole cart (`{ data: { items, item_count, total } }`)
 | POST | `/checkout` | Header `Idempotency-Key: <uuid>` | `201` pending order. A repeated key returns `200` with the same order | 422 empty cart or missing/invalid key, 409 `{ message, shortages[] }` |
 | POST | `/orders/{reference}/pay` | `card_number` (spaces allowed), `expiry_month`, `expiry_year` (4 digits), `cvc`, `cardholder_name` | `200` paid order **with keys** (repeat calls don't charge again) | 402 `{ message, failure_code }`, 410 expired, 404 missing or not yours, 422 invalid or non-test card, 429 |
 | GET | `/orders/{reference}` | — | `200` order. A pending order past `expires_at` shows as `expired`; keys only when `paid` | 404 missing or not yours |
-| GET | `/orders` *(planned)* | `page` | `200` paginated order history (newest first) | |
+| GET | `/orders` | `page` | `200 { data[], links, meta }`: your orders only, newest first, 10 per page. Each row is `{ reference, status, total, item_count, created_at, paid_at, expires_at, product_names[≤3], more_products, cover_image_url }`, never keys. A fixed number of queries per page | 401 |
 
 An order is `{ reference, status, total, expires_at, paid_at, created_at, server_time, items[{ id, product_name, seller_name, product_slug, cover_image_url, platform_name, region_name, quantity, unit_price, line_total, keys?[{ id, code }] }] }`. Prices are the checkout snapshots. The client runs its countdown from `server_time`, so a device with a wrong clock still shows the right time left.
 
@@ -658,7 +704,7 @@ An order is `{ reference, status, total, expires_at, paid_at, created_at, server
 | `/cart` | Guest or server cart with live price/stock notices and one-time merge notices; the header badge shows the item count. Guests check out via "Log in to check out" (`/login?redirect=/cart`) | |
 | `/checkout/:reference` | Order summary, reservation countdown (server clock), simulated card form with clickable test cards, decline message with retry, expired screen. Started by the cart's Checkout button, whose idempotency key stays the same until the cart changes | 🔒 |
 | `/orders/:reference` | Order detail; after payment, the success page with each key and a Copy button (Clipboard API, with select-and-Ctrl+C as the fallback) | 🔒 |
-| `/orders` | Order history *(placeholder)* | 🔒 |
+| `/orders` | Order history: date, reference, status badge (Paid, Awaiting payment, Expired), total, key count, product preview. Pending orders link to checkout, others to the order page. Paginated with `?page=`; empty state links to the store | 🔒 |
 | `/login`, `/register` | Auth (honours `?redirect=`) | |
 | `/dev/components` | Component showcase for comparing against eneba.com. Deployed but not linked anywhere; served with `X-Robots-Tag: noindex` | |
 
@@ -679,15 +725,21 @@ frontend/src/
   index.css               tokens (@theme), fonts, base styles
   main.tsx                QueryClient (no retries on 4xx) + RouterProvider
   routes/                 router.tsx (all routes, lazy dev page), RequireAuth.tsx (waits for the session check, then guests → /login?redirect=)
-  lib/api/                client.ts (apiRequest/apiGet, Bearer token, 401 → onUnauthorized, ApiError with field errors + retryAfter), auth.ts, cart.ts, types.ts, catalog.ts (query options + hooks)
+  lib/api/                client.ts (apiRequest/apiGet, Bearer token, 401 → onUnauthorized, ApiError with field errors + retryAfter + body,
+                          reuses public/prefetch.js responses), auth.ts, cart.ts, orders.ts, types.ts, catalog.ts (query options + hooks)
+  lib/                    steamImages.ts (300/600 px cover and 600 px screenshot srcsets), errors.ts, card.ts, countdown.ts, checkoutKey.ts
   lib/                    cart.ts (guest cart + merge id), cartReconcile.ts (CartLine + notices), cartSession.ts (merge once, reset on logout), useCartState.ts
   lib/auth/               token.ts, redirect.ts (safeRedirectPath, loginPathFor), AuthContext.tsx + useAuth.ts, passwordRules.ts
   lib/                    format.ts (Intl EUR), cn.ts
   hooks/                  useDebouncedValue
-  components/ui/          Button (+ buttonStyles), Badge, PriceTag, ProductCard, Skeleton, TextField
+  components/ui/          Button (+ buttonStyles), Badge, PriceTag, ProductCard, Skeleton, TextField,
+                          PageState (ErrorState with Try again, EmptyState: every page's error and empty states)
   components/search/      SearchBox (ARIA 1.2 combobox)
   components/layout/      AppLayout (AuthProvider), Header (platform links from /catalog/filters), UserMenu (My orders, Log out), Footer (Steam credit), Logo
-  pages/                  home, store, product, cart, auth (LoginPage with demo button, RegisterPage with live password rules), placeholders, dev/ComponentsPage
+  pages/                  home, store, product, cart, auth (LoginPage with demo button, RegisterPage with live password rules),
+                          checkout, orders (history, detail with keys), NotFoundPage, dev/ComponentsPage.
+                          Login, register, checkout and order pages are lazy-loaded routes
+public/                  favicon.svg (our diamond mark), apple-touch-icon.png, robots.txt, prefetch.js (landing-page API prefetch)
 ```
 
 **Header search:**
@@ -723,6 +775,15 @@ frontend/src/
 - **Network or 5xx error:** a "Try again" button and a note that the free-tier server can take up to a minute to wake up.
 
 ---
+
+### Performance and accessibility
+
+Measured with Lighthouse 12 (mobile) before and after a dedicated pass; scores, fixes and what is still open are in [LIGHTHOUSE.md](LIGHTHOUSE.md). Accessibility and SEO score 100 on the homepage, store and product page. Points that shape the code:
+
+- **Images.** Steam covers and screenshots get a `srcset` (`lib/steamImages.ts`) and an honest `sizes`. Only the likely LCP image is `fetchpriority="high"`; hero slides load one ahead instead of all at once.
+- **Early data.** `public/prefetch.js` (deferred, same origin, allowed by the CSP) starts the landing page's public API requests while the bundle downloads. `apiRequest` reuses each response once by exact URL within 10 s and otherwise fetches as usual, so a miss costs nothing.
+- **States.** Every page uses `ErrorState` (message, Try again, optional actions) and `EmptyState` (message and next step), and sets its own `<title>` with React 19's document metadata.
+- **Mobile and keyboard.** Checked by a headless script at 390 px on every route: no horizontal overflow, tap targets of at least 24 px, a visible focus style on every focusable element.
 
 ## Backend layout
 

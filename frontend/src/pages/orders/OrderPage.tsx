@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocation, useParams } from 'react-router'
 import { Container } from '../../components/layout/Container'
 import { Button, ButtonLink } from '../../components/ui/Button'
+import { EmptyState, ErrorState } from '../../components/ui/PageState'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { ApiError } from '../../lib/api/client'
 import { orderQueries, type OrderKey } from '../../lib/api/orders'
@@ -71,11 +72,13 @@ export function OrderPage() {
       {order.isPending ? (
         <Skeleton className="h-[260px] w-full" />
       ) : order.isError ? (
-        <div className="flex flex-col items-start gap-3 bg-band p-5">
-          <h1 className="text-2xl font-extrabold">Order not found</h1>
-          <p className="text-soft">{order.error instanceof ApiError && order.error.status === 404 ? 'We couldn’t find this order.' : 'Couldn’t load this order. Please try again.'}</p>
-          <ButtonLink to="/store">Browse the store</ButtonLink>
-        </div>
+        order.error instanceof ApiError && order.error.status === 404 ? (
+          <EmptyState as="h1" title="Order not found" action={<ButtonLink to="/orders">My orders</ButtonLink>}>
+            This order doesn’t exist or belongs to another account.
+          </EmptyState>
+        ) : (
+          <ErrorState as="h1" title="We couldn’t load this order" error={order.error} onRetry={() => void order.refetch()} />
+        )
       ) : (
         <>
           <header className="flex flex-col gap-2">

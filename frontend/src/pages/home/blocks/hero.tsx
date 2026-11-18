@@ -4,6 +4,7 @@ import { Container } from '../../../components/layout/Container'
 import { ButtonLink } from '../../../components/ui/Button'
 import type { HeroSlide } from '../../../lib/api/types'
 import { cn } from '../../../lib/cn'
+import { coverImageProps } from '../../../lib/steamImages'
 import { formatMoney } from '../../../lib/format'
 import { isHeroBlockData } from '../blockData'
 import type { BlockComponentProps } from '../registry'
@@ -42,6 +43,9 @@ function ArrowButton({ direction, onClick }: { direction: 'previous' | 'next'; o
  */
 export default function HeroBlock({ block }: BlockComponentProps) {
   const [current, setCurrent] = useState(0)
+  // Slides whose image has been requested; the rest load just before they're shown.
+  const [loaded, setLoaded] = useState<ReadonlySet<number>>(() => new Set([0]))
+  const shouldLoad = (index: number) => loaded.has(index) || index === current || index === (current + 1) % slides.length
   const [isHovered, setIsHovered] = useState(false)
   const [hasFocus, setHasFocus] = useState(false)
   const [isStopped, setIsStopped] = useState(prefersReducedMotion)
@@ -86,9 +90,12 @@ export default function HeroBlock({ block }: BlockComponentProps) {
                 className={cn('absolute inset-0 transition-opacity duration-500', index === current ? 'opacity-100' : 'opacity-0')}
               >
                 <img
-                  src={slide.image_url}
+                  src={shouldLoad(index) ? slide.image_url : undefined}
+                  onLoad={() => setLoaded((previous) => (previous.has(index) ? previous : new Set(previous).add(index)))}
                   alt=""
                   loading={index === 0 ? 'eager' : 'lazy'}
+                  fetchPriority={index === 0 ? 'high' : 'low'}
+                  decoding={index === 0 ? 'sync' : 'async'}
                   className="absolute inset-0 size-full object-cover"
                 />
                 <div aria-hidden className="absolute inset-0 bg-linear-to-r from-black/80 via-black/40 to-transparent" />
@@ -136,8 +143,10 @@ export default function HeroBlock({ block }: BlockComponentProps) {
                       aria-label={`Show slide ${index + 1}: ${slide.title}`}
                       aria-current={index === current}
                       aria-controls={slidesId}
-                      className={cn('h-[4px] w-5 transition-colors', index === current ? 'bg-accent' : 'bg-white/45 hover:bg-white/80')}
-                    />
+                      className="group/dot grid h-6 w-6 place-items-center"
+                    >
+                      <span aria-hidden className={cn('h-[4px] w-5 transition-colors', index === current ? 'bg-accent' : 'bg-white/45 group-hover/dot:bg-white/80')} />
+                    </button>
                   ))}
                 </div>
               </div>
@@ -155,9 +164,11 @@ export default function HeroBlock({ block }: BlockComponentProps) {
                   aria-label={slide.price_from ? `${slide.title}, from ${formatMoney(slide.price_from)}` : slide.title}
                 >
                   <img
-                    src={slide.cover_image_url ?? slide.image_url}
+                    {...coverImageProps(slide.cover_image_url ?? slide.image_url)}
+                    sizes="165px"
                     alt=""
                     loading="lazy"
+                    decoding="async"
                     className="size-full object-cover transition-opacity duration-150 group-hover/tile:opacity-80"
                   />
                   <span className="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/85 to-transparent p-2 pt-7">

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { Container } from '../../components/layout/Container'
 import { Button, ButtonLink } from '../../components/ui/Button'
+import { EmptyState, ErrorState } from '../../components/ui/PageState'
 import { Pagination } from '../../components/ui/Pagination'
 import { ProductCard } from '../../components/ui/ProductCard'
 import { ProductCardSkeleton } from '../../components/ui/Skeleton'
@@ -134,29 +135,21 @@ export function StorePage() {
           <ActiveFilters state={state} facets={facets} onChange={commit} />
 
           {failed ? (
-            <div role="alert" className="flex flex-col items-start gap-3 bg-black/20 p-5">
-              <h2 className="text-lg font-extrabold">We couldn’t load the store</h2>
-              <p className="max-w-[60ch] text-sm text-soft">
-                {products.error instanceof ApiError && products.error.isNetworkError
-                  ? 'The server didn’t respond. On the free hosting tier it can take up to a minute to wake up.'
-                  : 'Something went wrong on our side. Please try again.'}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => {
-                    void products.refetch()
-                    void filters.refetch()
-                  }}
-                >
-                  Try again
-                </Button>
-                {unrecoverable && (
+            <ErrorState
+              title="We couldn’t load the store"
+              error={products.error}
+              onRetry={() => {
+                void products.refetch()
+                void filters.refetch()
+              }}
+              actions={
+                unrecoverable && (
                   <ButtonLink to="/store" variant="secondary">
                     Reset filters
                   </ButtonLink>
-                )}
-              </div>
-            </div>
+                )
+              }
+            />
           ) : isFirstLoad ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {Array.from({ length: 12 }, (_, index) => (
@@ -164,28 +157,36 @@ export function StorePage() {
               ))}
             </div>
           ) : items.length === 0 ? (
-            <div className="flex flex-col items-start gap-3 bg-black/20 p-5">
-              <h2 className="text-lg font-extrabold">{state.q ? `No results for “${state.q}”` : 'No games match these filters'}</h2>
-              <p className="text-sm text-soft">
-                {filterCount > 0 ? 'Try removing a filter or widening the price range.' : 'Check the spelling or try a shorter search.'}
-              </p>
-              <div className="flex gap-2">
-                {filterCount > 0 && <Button onClick={() => commit(clearFilters(state))}>Clear filters</Button>}
-                {state.q && (
-                  <ButtonLink to="/store" variant="secondary">
-                    Browse all games
-                  </ButtonLink>
-                )}
-              </div>
-            </div>
+            <EmptyState
+              title={state.q ? `No results for “${state.q}”` : 'No games match these filters'}
+              action={
+                (filterCount > 0 || state.q) && (
+                  <div className="flex flex-wrap gap-2">
+                    {filterCount > 0 && <Button onClick={() => commit(clearFilters(state))}>Clear filters</Button>}
+                    {state.q && (
+                      <ButtonLink to="/store" variant="secondary">
+                        Browse all games
+                      </ButtonLink>
+                    )}
+                  </div>
+                )
+              }
+            >
+              {filterCount > 0 ? 'Try removing a filter or widening the price range.' : 'Check the spelling or try a shorter search.'}
+            </EmptyState>
           ) : (
-            <ul className={cn('grid grid-cols-2 gap-3 transition-opacity sm:grid-cols-3 lg:grid-cols-4', isRefreshing && 'opacity-60')}>
-              {items.map((product) => (
-                <li key={product.id} className="grid">
-                  <ProductCard product={product} />
-                </li>
-              ))}
-            </ul>
+            <>
+              {/* Keeps the heading outline h1 → h2 → h3 (the cards' titles). */}
+              <h2 className="sr-only">Results</h2>
+              <ul className={cn('grid grid-cols-2 gap-3 transition-opacity sm:grid-cols-3 lg:grid-cols-4', isRefreshing && 'opacity-60')}>
+                {items.map((product, index) => (
+                  <li key={product.id} className="grid">
+                    {/* The first cover is usually the LCP image; making the rest of the row eager too made it slower (they compete for bandwidth). */}
+                    <ProductCard product={product} loading={index === 0 ? 'priority' : 'lazy'} />
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
 
           {meta && !failed && (

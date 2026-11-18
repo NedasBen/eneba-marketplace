@@ -65,6 +65,29 @@ export function toQueryString(params: Record<string, QueryValue> = {}): string {
   return query === '' ? '' : `?${query}`
 }
 
+declare global {
+  interface Window {
+    /** Responses started by public/prefetch.js before the bundle ran, by full URL. */
+    __apiPrefetch?: Record<string, Promise<Response | null>>
+  }
+}
+
+/** Prefetched responses are only reused early on, so they can't be stale. */
+const PREFETCH_MAX_AGE_MS = 10_000
+
+/** A response public/prefetch.js already started for this URL (each is used once). */
+export function takePrefetched(url: string): Promise<Response | null> | undefined {
+  if (typeof window === 'undefined' || window.__apiPrefetch === undefined) return undefined
+  if (performance.now() > PREFETCH_MAX_AGE_MS) {
+    window.__apiPrefetch = undefined
+    return undefined
+  }
+
+  const pending = window.__apiPrefetch[url]
+  delete window.__apiPrefetch[url]
+  return pending
+}
+
 interface RequestOptions {
   params?: Record<string, QueryValue>
   body?: unknown
@@ -88,15 +111,20 @@ export async function apiRequest<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   if (token) headers.Authorization = `Bearer ${token}`
   if (options.body !== undefined) headers['Content-Type'] = 'application/json'
 
+  const url = `${API_BASE_URL}/api/v1${path}${toQueryString(options.params)}`
   let response: Response
 
   try {
-    response = await fetch(`${API_BASE_URL}/api/v1${path}${toQueryString(options.params)}`, {
-      method,
-      headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      signal: options.signal,
-    })
+    const prefetched = method === 'GET' ? await takePrefetched(url) : null
+    response =
+      prefetched?.ok === true
+        ? prefetched
+        : await fetch(url, {
+            method,
+            headers,
+            body: options.body === undefined ? undefined : JSON.stringify(options.body),
+            signal: options.signal,
+          })
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error
     throw new ApiError(0, 'Could not reach the server. Please try again.')

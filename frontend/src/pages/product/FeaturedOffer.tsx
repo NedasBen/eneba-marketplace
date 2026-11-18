@@ -48,7 +48,7 @@ export function FeaturedOffer({ product }: { product: ProductDetail }) {
       <div>
         {product.discount_percent !== null && product.discount_percent > 0 && (
           <p className="text-sm font-extrabold">
-            <s className="text-muted">{formatMoney(product.retail_price)}</s> <span className="text-discount">-{product.discount_percent}%</span>
+            <s className="text-soft">{formatMoney(product.retail_price)}</s> <span className="text-discount">-{product.discount_percent}%</span>
           </p>
         )}
         <p className="text-[32px] leading-tight font-extrabold">{formatMoney(best.price)}</p>
@@ -61,7 +61,7 @@ export function FeaturedOffer({ product }: { product: ProductDetail }) {
         <AddToCartButton product={product} offer={best} fullWidth />
       </div>
       {cheapestOther && (
-        <a href="#offers" className="border-t border-white/15 pt-3 text-center text-sm font-semibold text-success hover:text-white">
+        <a href="#offers" className="border-t border-white/15 pt-3 text-center text-sm font-semibold text-highlight hover:text-white">
           +{others.length} {others.length === 1 ? 'offer' : 'offers'} from {formatMoney(cheapestOther.price)}
         </a>
       )}

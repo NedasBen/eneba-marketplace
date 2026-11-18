@@ -5,11 +5,13 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\PayOrderRequest;
 use App\Http\Resources\OrderResource;
+use App\Http\Resources\OrderSummaryResource;
 use App\Models\Order;
 use App\Services\Checkout\OrderPaymentService;
 use App\Services\Checkout\PaymentOutcome;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
@@ -23,6 +25,28 @@ class OrderController extends Controller
         'card_declined' => 'Your card was declined. Try another card.',
         'insufficient_funds' => 'Your card has insufficient funds. Try another card.',
     ];
+
+    public const PER_PAGE = 10;
+
+    /**
+     * The user's orders, newest first (uses the (user_id, created_at) index).
+     */
+    public function index(Request $request): AnonymousResourceCollection
+    {
+        $orders = Order::query()
+            ->where('user_id', $request->user()->id)
+            ->with([
+                'items:id,order_id,product_id,product_name,quantity',
+                'items.product:id,game_id',
+                'items.product.game:id,cover_image_url',
+            ])
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->paginate(self::PER_PAGE)
+            ->withQueryString();
+
+        return OrderSummaryResource::collection($orders);
+    }
 
     public function show(Request $request, string $reference): OrderResource
     {

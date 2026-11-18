@@ -58,7 +58,7 @@ export function ProductDetails({ product }: { product: ProductDetail }) {
               aria-expanded={expanded}
               aria-controls={descriptionId}
               onClick={() => setExpanded((value) => !value)}
-              className="mx-auto mt-3 block text-sm font-semibold text-accent hover:text-accent-hover"
+              className="mx-auto mt-3 block min-h-6 px-2 text-sm font-semibold text-accent hover:text-accent-hover"
             >
               {expanded ? 'Show less' : 'Read more'}
             </button>

@@ -3,6 +3,7 @@ import { useCatalogFilters } from '../../lib/api/catalog'
 import { useAuth } from '../../lib/auth/useAuth'
 import { loginPathFor } from '../../lib/auth/redirect'
 import { cn } from '../../lib/cn'
+import { EMPTY_STORE_STATE, toFilterParams } from '../../lib/storeParams'
 import { useCartCount } from '../../lib/useCartState'
 import { SearchBox } from '../search/SearchBox'
 import { Skeleton } from '../ui/Skeleton'
@@ -58,13 +59,13 @@ function AccountArea() {
     <div className="flex items-center gap-1">
       <UserIcon />
       {/* Come back to this page after logging in (auth pages map to plain /login). */}
-      <Link to={loginPathFor(`${location.pathname}${location.search}`)} className="transition-colors hover:text-accent">
+      <Link to={loginPathFor(`${location.pathname}${location.search}`)} className="inline-flex min-h-7 items-center transition-colors hover:text-accent">
         Log in
       </Link>
       <span aria-hidden className="text-muted">
         |
       </span>
-      <Link to="/register" className="transition-colors hover:text-accent">
+      <Link to="/register" className="inline-flex min-h-7 items-center transition-colors hover:text-accent">
         Register
       </Link>
     </div>
@@ -72,11 +73,12 @@ function AccountArea() {
 }
 
 const navLinkClasses = ({ isActive }: { isActive: boolean }) =>
-  cn('whitespace-nowrap py-2 text-sm font-semibold transition-colors hover:text-accent', isActive ? 'text-accent' : 'text-white')
+  cn('min-w-6 shrink-0 whitespace-nowrap py-2 text-center text-sm font-semibold transition-colors hover:text-accent', isActive ? 'text-accent' : 'text-white')
 
 /** Store shortcuts; platform links come from /catalog/filters, not hardcoded. */
 function CategoryNav() {
-  const filters = useCatalogFilters()
+  // Same params as an unfiltered store page, so landing on /store shares one request.
+  const filters = useCatalogFilters(toFilterParams(EMPTY_STORE_STATE))
 
   return (
     <nav aria-label="Categories" className="bg-nav">
@@ -84,14 +86,14 @@ function CategoryNav() {
         <NavLink to="/store" end className={navLinkClasses}>
           All games
         </NavLink>
-        <Link to="/store?sort=popularity" className="whitespace-nowrap py-2 text-sm font-semibold hover:text-accent">
+        <Link to="/store?sort=popularity" className="min-w-6 shrink-0 whitespace-nowrap py-2 text-center text-sm font-semibold hover:text-accent">
           Best sellers
         </Link>
-        <Link to="/store?sort=release_date" className="whitespace-nowrap py-2 text-sm font-semibold hover:text-accent">
+        <Link to="/store?sort=release_date" className="min-w-6 shrink-0 whitespace-nowrap py-2 text-center text-sm font-semibold hover:text-accent">
           New releases
         </Link>
         {filters.data?.platforms.map((platform) => (
-          <Link key={platform.slug} to={`/store?platform=${platform.slug}`} className="whitespace-nowrap py-2 text-sm font-semibold hover:text-accent">
+          <Link key={platform.slug} to={`/store?platform=${platform.slug}`} className="min-w-6 shrink-0 whitespace-nowrap py-2 text-center text-sm font-semibold hover:text-accent">
             {platform.name}
           </Link>
         ))}

@@ -54,7 +54,7 @@ export function EditionSwitcher({ editions }: { editions: ProductEdition[] }) {
               <li key={edition.slug}>
                 <Link to={`/product/${edition.slug}`} preventScrollReset aria-current={edition.is_current ? 'page' : undefined} className={pillClasses(edition.is_current, edition.in_stock)}>
                   {edition.region.name}
-                  <span className="text-[11px] font-extrabold text-muted">{edition.price_from ? formatMoney(edition.price_from) : 'Sold out'}</span>
+                  <span className="text-[11px] font-extrabold text-soft">{edition.price_from ? formatMoney(edition.price_from) : 'Sold out'}</span>
                 </Link>
               </li>
             ))}

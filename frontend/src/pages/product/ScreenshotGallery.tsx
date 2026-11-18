@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { screenshotThumbnailProps } from '../../lib/steamImages'
 
 const MAX_THUMBNAILS = 6
 
@@ -39,7 +40,16 @@ export function ScreenshotGallery({ screenshots, gameName }: { screenshots: stri
               aria-label={`Open screenshot ${index + 1} of ${shots.length}`}
               className="group block aspect-video w-full overflow-hidden bg-card"
             >
-              <img src={url} alt="" loading="lazy" className="size-full object-cover transition-opacity group-hover:opacity-80" />
+              <img
+                {...screenshotThumbnailProps(url)}
+                sizes="(min-width: 600px) 125px, 33vw"
+                alt=""
+                width={600}
+                height={338}
+                loading="lazy"
+                decoding="async"
+                className="size-full object-cover transition-opacity group-hover:opacity-80"
+              />
             </button>
           </li>
         ))}

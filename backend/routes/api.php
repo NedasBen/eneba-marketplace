@@ -39,6 +39,7 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
 
     Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('checkout', [CheckoutController::class, 'store'])->name('checkout.store');
+        Route::get('orders', [OrderController::class, 'index'])->name('orders.index');
         Route::get('orders/{reference}', [OrderController::class, 'show'])->name('orders.show');
         Route::post('orders/{reference}/pay', [OrderController::class, 'pay'])->middleware('throttle:payments')->name('orders.pay');
     });

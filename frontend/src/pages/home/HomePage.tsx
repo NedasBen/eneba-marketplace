@@ -1,8 +1,8 @@
 import { Container } from '../../components/layout/Container'
-import { Button, ButtonLink } from '../../components/ui/Button'
+import { ButtonLink } from '../../components/ui/Button'
+import { EmptyState, ErrorState } from '../../components/ui/PageState'
 import { ProductCardSkeleton, Skeleton } from '../../components/ui/Skeleton'
 import { useHomepage } from '../../lib/api/catalog'
-import { ApiError } from '../../lib/api/client'
 import { blockComponentFor } from './registry'
 
 function HomepageSkeleton() {
@@ -50,26 +50,23 @@ export function HomePage() {
         <HomepageSkeleton />
       ) : homepage.isError ? (
         <Container className="py-9">
-          <div role="alert" className="flex flex-col items-start gap-3 bg-black/20 p-5">
-            <h1 className="text-lg font-extrabold">We couldn’t load the homepage</h1>
-            <p className="max-w-[60ch] text-sm text-soft">
-              {homepage.error instanceof ApiError && homepage.error.isNetworkError
-                ? 'The server didn’t respond. On the free hosting tier it can take up to a minute to wake up.'
-                : 'Something went wrong on our side. Please try again.'}
-            </p>
-            <div className="flex gap-2">
-              <Button onClick={() => void homepage.refetch()}>Try again</Button>
+          <ErrorState
+            as="h1"
+            title="We couldn’t load the homepage"
+            error={homepage.error}
+            onRetry={() => void homepage.refetch()}
+            actions={
               <ButtonLink to="/store" variant="secondary">
                 Browse the store
               </ButtonLink>
-            </div>
-          </div>
+            }
+          />
         </Container>
       ) : homepage.data.length === 0 ? (
-        <Container className="flex flex-col items-start gap-3 py-9">
-          <h1 className="text-2xl font-extrabold">Welcome</h1>
-          <p className="text-soft">There is nothing featured right now.</p>
-          <ButtonLink to="/store">Browse the store</ButtonLink>
+        <Container className="py-9">
+          <EmptyState as="h1" title="Welcome" action={<ButtonLink to="/store">Browse the store</ButtonLink>}>
+            There is nothing featured right now.
+          </EmptyState>
         </Container>
       ) : (
         <div className="pb-2">

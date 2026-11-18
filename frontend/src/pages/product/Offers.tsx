@@ -42,7 +42,7 @@ export function SellerLine({ offer }: { offer: ProductOffer }) {
       <p className="flex flex-wrap items-center gap-1 text-xs text-soft">
         <StarIcon />
         <span className="font-extrabold text-white">{rating.score}</span> {rating.label} rating
-        <span className="text-muted">· {offer.seller.feedback_count.toLocaleString('en-IE')} reviews</span>
+        <span className="text-soft">· {offer.seller.feedback_count.toLocaleString('en-IE')} reviews</span>
       </p>
     </div>
   )

@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { Navigate, useParams } from 'react-router'
 import { Container } from '../../components/layout/Container'
 import { ButtonLink } from '../../components/ui/Button'
+import { EmptyState, ErrorState } from '../../components/ui/PageState'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { CART_QUERY_KEY } from '../../lib/api/cart'
 import { ApiError } from '../../lib/api/client'
@@ -17,11 +18,9 @@ import { CardForm } from './CardForm'
 
 function ExpiredNotice() {
   return (
-    <div className="flex flex-col items-start gap-3 bg-band p-5">
-      <h2 className="text-lg font-extrabold">Your reservation expired</h2>
-      <p className="text-soft">The keys were held for 15 minutes and have gone back on sale. Your cart still has the items: check out again to reserve them.</p>
-      <ButtonLink to="/cart">Back to cart</ButtonLink>
-    </div>
+    <EmptyState title="Your reservation expired" action={<ButtonLink to="/cart">Back to cart</ButtonLink>}>
+      The keys were held for 15 minutes and have gone back on sale. Your cart still has the items: check out again to reserve them.
+    </EmptyState>
   )
 }
 
@@ -61,7 +60,7 @@ function PaymentPanel({ order, offsetMs, onPaid }: { order: Order; offsetMs: num
   }
 
   return (
-    <section aria-labelledby="payment-title" className="flex flex-col gap-4 self-start bg-raised p-4">
+    <section aria-labelledby="payment-title" className="flex flex-col gap-4 self-start bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="payment-title" className="text-lg font-extrabold">
           Pay {formatMoney(order.total)}
@@ -114,10 +113,22 @@ export function CheckoutPage() {
           <Skeleton className="h-[420px] w-full" />
         </div>
       ) : order.isError ? (
-        <div className="flex flex-col items-start gap-3 bg-band p-5">
-          <p className="text-soft">{order.error instanceof ApiError && order.error.status === 404 ? 'We couldn’t find this order.' : 'Couldn’t load this order. Please try again.'}</p>
-          <ButtonLink to="/cart">Back to cart</ButtonLink>
-        </div>
+        order.error instanceof ApiError && order.error.status === 404 ? (
+          <EmptyState title="Order not found" action={<ButtonLink to="/orders">My orders</ButtonLink>}>
+            This order doesn’t exist or belongs to another account.
+          </EmptyState>
+        ) : (
+          <ErrorState
+            title="We couldn’t load this order"
+            error={order.error}
+            onRetry={() => void order.refetch()}
+            actions={
+              <ButtonLink to="/cart" variant="secondary">
+                Back to cart
+              </ButtonLink>
+            }
+          />
+        )
       ) : order.data.status === 'expired' ? (
         <ExpiredNotice />
       ) : (

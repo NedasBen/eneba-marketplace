@@ -43,6 +43,9 @@ export interface CartView {
   isFetching: boolean
   /** Couldn't load (server cart) or couldn't re-check prices (guest cart). */
   isError: boolean
+  error: unknown
+  /** Load the cart (or re-check prices) again. */
+  retry: () => void
 }
 
 /** Lines with live price and stock notices, for the cart page. */
@@ -54,18 +57,39 @@ export function useCartLines(): CartView {
   const offers = useOfferStates(isServer ? [] : guestItems.map((item) => item.offerId))
 
   return useMemo(() => {
+    const retryServer = () => void server.refetch()
+    const retryOffers = () => void offers.refetch()
+
     if (status === 'loading') {
-      return { source: 'guest', lines: [], total: null, isLoading: true, isFetching: true, isError: false }
+      return { source: 'guest', lines: [], total: null, isLoading: true, isFetching: true, isError: false, error: null, retry: retryServer }
     }
 
     if (isServer) {
       const lines = server.data ? serverCartLines(server.data) : []
-      return { source: 'server', lines, total: cartTotal(lines), isLoading: server.isPending, isFetching: server.isFetching, isError: server.isError }
+      return {
+        source: 'server',
+        lines,
+        total: cartTotal(lines),
+        isLoading: server.isPending,
+        isFetching: server.isFetching,
+        isError: server.isError,
+        error: server.error,
+        retry: retryServer,
+      }
     }
 
     const lines = reconcileCart(guestItems, offers.data)
-    return { source: 'guest', lines, total: cartTotal(lines), isLoading: false, isFetching: offers.isFetching, isError: offers.isError }
-  }, [status, isServer, server.data, server.isPending, server.isFetching, server.isError, guestItems, offers.data, offers.isFetching, offers.isError])
+    return {
+      source: 'guest',
+      lines,
+      total: cartTotal(lines),
+      isLoading: false,
+      isFetching: offers.isFetching,
+      isError: offers.isError,
+      error: offers.error,
+      retry: retryOffers,
+    }
+  }, [status, isServer, server, guestItems, offers])
 }
 
 export type AddOutcome = { status: 'added'; quantity: number } | { status: 'limit_reached'; message: string } | { status: 'error'; message: string }

@@ -76,7 +76,7 @@ export function UserMenu({ user, icon }: { user: User; icon: ReactNode }) {
             setOpen(true)
           }
         }}
-        className={cn('flex items-center gap-1 transition-colors hover:text-accent', open && 'text-accent')}
+        className={cn('flex min-h-7 items-center gap-1 transition-colors hover:text-accent', open && 'text-accent')}
       >
         {icon}
         <span className="max-w-[140px] truncate">{user.name}</span>

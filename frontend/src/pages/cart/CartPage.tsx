@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { Container } from '../../components/layout/Container'
 import { Button, ButtonLink } from '../../components/ui/Button'
+import { EmptyState, ErrorState } from '../../components/ui/PageState'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { CART_QUERY_KEY } from '../../lib/api/cart'
 import { ApiError } from '../../lib/api/client'
@@ -215,14 +216,11 @@ export function CartPage() {
           <Skeleton className="h-[110px] w-full" />
         </div>
       ) : view.source === 'server' && view.isError && view.lines.length === 0 ? (
-        <div className="flex flex-col items-start gap-3 bg-band p-5">
-          <p className="text-soft">Couldn’t load your cart. Please try again in a moment.</p>
-        </div>
+        <ErrorState title="We couldn’t load your cart" error={view.error} onRetry={view.retry} />
       ) : view.lines.length === 0 ? (
-        <div className="flex flex-col items-start gap-3 bg-band p-5">
-          <p className="text-soft">Your cart is empty.</p>
-          <ButtonLink to="/store">Browse the store</ButtonLink>
-        </div>
+        <EmptyState title="Your cart is empty" action={<ButtonLink to="/store">Browse the store</ButtonLink>}>
+          Find a game in the store and add a key from the seller you like.
+        </EmptyState>
       ) : (
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_300px]">
           <ul className="flex flex-col gap-2" aria-busy={view.isFetching}>
@@ -230,7 +228,7 @@ export function CartPage() {
               <CartRow key={line.offerId} line={line} />
             ))}
           </ul>
-          <aside className="flex flex-col gap-3 self-start bg-raised p-4">
+          <aside className="flex flex-col gap-3 self-start bg-card p-4">
             <p className="flex justify-between text-sm">
               <span className="text-soft">Total</span>
               <span className="text-xl font-extrabold">{view.total ? formatMoney(view.total) : '…'}</span>

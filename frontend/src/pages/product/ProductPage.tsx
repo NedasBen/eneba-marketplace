@@ -2,12 +2,14 @@ import type { ReactNode } from 'react'
 import { Link, useParams } from 'react-router'
 import { Container } from '../../components/layout/Container'
 import { Badge } from '../../components/ui/Badge'
-import { Button, ButtonLink } from '../../components/ui/Button'
+import { ButtonLink } from '../../components/ui/Button'
+import { EmptyState, ErrorState } from '../../components/ui/PageState'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useProduct } from '../../lib/api/catalog'
 import { ApiError } from '../../lib/api/client'
 import type { ProductDetail } from '../../lib/api/types'
 import { cn } from '../../lib/cn'
+import { coverImageProps } from '../../lib/steamImages'
 import { EditionSwitcher } from './EditionSwitcher'
 import { FeaturedOffer } from './FeaturedOffer'
 import { OffersSection } from './Offers'
@@ -39,7 +41,11 @@ function ProductSummary({ product }: { product: ProductDetail }) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row">
       <img
-        src={product.game.cover_image_url}
+        {...coverImageProps(product.game.cover_image_url)}
+        sizes="(min-width: 600px) 165px, 130px"
+        width={165}
+        height={231}
+        fetchPriority="high"
         alt={`${product.game.name} cover`}
         className="aspect-[1/1.4] w-[130px] shrink-0 bg-card object-cover sm:w-[165px]"
       />
@@ -105,16 +111,22 @@ function ProductPageSkeleton() {
 
 function ProductNotFound() {
   return (
-    <Container className="flex flex-col items-start gap-3 py-9">
+    <Container className="py-9">
       <title>Product not found | Eneba Marketplace</title>
-      <h1 className="text-2xl font-extrabold">This product doesn’t exist</h1>
-      <p className="max-w-[60ch] text-soft">The link may be old, or the product was removed. Try searching for the game instead.</p>
-      <div className="flex gap-2">
-        <ButtonLink to="/store">Browse the store</ButtonLink>
-        <ButtonLink to="/" variant="secondary">
-          Home
-        </ButtonLink>
-      </div>
+      <EmptyState
+        as="h1"
+        title="This product doesn’t exist"
+        action={
+          <div className="flex flex-wrap gap-2">
+            <ButtonLink to="/store">Browse the store</ButtonLink>
+            <ButtonLink to="/" variant="secondary">
+              Home
+            </ButtonLink>
+          </div>
+        }
+      >
+        The link may be old, or the product was removed. Try searching for the game instead.
+      </EmptyState>
     </Container>
   )
 }
@@ -131,15 +143,8 @@ export function ProductPage() {
 
     return (
       <Container className="py-9">
-        <div role="alert" className="flex flex-col items-start gap-3 bg-black/20 p-5">
-          <h1 className="text-lg font-extrabold">We couldn’t load this product</h1>
-          <p className="max-w-[60ch] text-sm text-soft">
-            {product.error instanceof ApiError && product.error.isNetworkError
-              ? 'The server didn’t respond. On the free hosting tier it can take up to a minute to wake up.'
-              : 'Something went wrong on our side. Please try again.'}
-          </p>
-          <Button onClick={() => void product.refetch()}>Try again</Button>
-        </div>
+        <title>Product | Eneba Marketplace</title>
+        <ErrorState as="h1" title="We couldn’t load this product" error={product.error} onRetry={() => void product.refetch()} />
       </Container>
     )
   }

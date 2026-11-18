@@ -84,3 +84,33 @@ describe('apiRequest', () => {
     await expect(apiRequest('POST', '/auth/logout')).resolves.toBeUndefined()
   })
 })
+
+describe('prefetched responses (public/prefetch.js)', () => {
+  const homepageUrl = `${(import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '')}/api/v1/homepage`
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('reuses a prefetched GET once instead of fetching again', async () => {
+    const fetchMock = respond(200, { fresh: true })
+    vi.stubGlobal('window', { __apiPrefetch: { [homepageUrl]: Promise.resolve(new Response(JSON.stringify({ prefetched: true }), { status: 200 })) } })
+    vi.stubGlobal('performance', { now: () => 500 })
+
+    await expect(apiRequest('GET', '/homepage')).resolves.toEqual({ prefetched: true })
+    await expect(apiRequest('GET', '/homepage')).resolves.toEqual({ fresh: true })
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it('ignores prefetches after the first seconds and failed prefetches', async () => {
+    const fetchMock = respond(200, { fresh: true })
+    vi.stubGlobal('window', { __apiPrefetch: { [homepageUrl]: Promise.resolve(null) } })
+    vi.stubGlobal('performance', { now: () => 500 })
+    await expect(apiRequest('GET', '/homepage')).resolves.toEqual({ fresh: true })
+
+    vi.stubGlobal('window', { __apiPrefetch: { [homepageUrl]: Promise.resolve(new Response('{"old":true}')) } })
+    vi.stubGlobal('performance', { now: () => 60_000 })
+    await expect(apiRequest('GET', '/homepage')).resolves.toEqual({ fresh: true })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+})

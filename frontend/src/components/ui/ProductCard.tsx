@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import type { ProductCard as ProductCardData } from '../../lib/api/types'
 import { cn } from '../../lib/cn'
+import { CARD_IMAGE_SIZES, coverImageProps } from '../../lib/steamImages'
 import { Badge } from './Badge'
 import { PriceTag } from './PriceTag'
 
@@ -11,7 +12,14 @@ import { PriceTag } from './PriceTag'
  * region label, price block. Hover: teal border + dimmed cover. Sold out:
  * the whole card dims, as with `.KRC33X`.
  */
-export function ProductCard({ product }: { product: ProductCardData }) {
+export function ProductCard({
+  product,
+  loading = 'lazy',
+}: {
+  product: ProductCardData
+  /** `eager` for cards above the fold; `priority` also for the likely LCP image (one per page). */
+  loading?: 'lazy' | 'eager' | 'priority'
+}) {
   const [imageFailed, setImageFailed] = useState(false)
 
   return (
@@ -19,7 +27,7 @@ export function ProductCard({ product }: { product: ProductCardData }) {
       to={`/product/${product.slug}`}
       className={cn(
         'group relative flex flex-col bg-card outline outline-1 -outline-offset-1 outline-transparent transition-[outline-color] duration-150',
-        'hover:outline-highlight focus-visible:outline-highlight',
+        'hover:outline-highlight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent focus-visible:transition-none',
       )}
     >
       <div className="relative aspect-[1/1.4] overflow-hidden bg-linear-to-b from-placeholder-from to-placeholder-to">
@@ -29,9 +37,14 @@ export function ProductCard({ product }: { product: ProductCardData }) {
           </span>
         ) : (
           <img
-            src={product.game.cover_image_url}
+            {...coverImageProps(product.game.cover_image_url)}
+            sizes={CARD_IMAGE_SIZES}
             alt=""
-            loading="lazy"
+            width={300}
+            height={420}
+            loading={loading === 'lazy' ? 'lazy' : 'eager'}
+            fetchPriority={loading === 'priority' ? 'high' : undefined}
+            decoding="async"
             onError={() => setImageFailed(true)}
             className="absolute inset-0 size-full object-cover transition-opacity duration-150 group-hover:opacity-80"
           />

@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiRequest } from './client'
-import type { Money } from './types'
+import type { Money, PaginationMeta } from './types'
 
 export type OrderStatus = 'pending' | 'paid' | 'expired'
 
@@ -55,7 +55,30 @@ export interface CardInput {
   cardholder_name: string
 }
 
+/** A row of GET /orders (never includes keys). */
+export interface OrderSummary {
+  reference: string
+  status: OrderStatus
+  total: Money
+  item_count: number
+  created_at: string
+  paid_at: string | null
+  expires_at: string
+  /** The first few product names, in order. */
+  product_names: string[]
+  /** How many more products the order has beyond `product_names`. */
+  more_products: number
+  cover_image_url: string | null
+}
+
 export const orderQueries = {
+  list: (page: number) =>
+    queryOptions({
+      queryKey: ['orders', page],
+      queryFn: ({ signal }) => apiRequest<{ data: OrderSummary[]; meta: PaginationMeta }>('GET', '/orders', { params: { page }, signal }),
+      staleTime: 0,
+    }),
+
   detail: (reference: string) =>
     queryOptions({
       queryKey: ['order', reference],

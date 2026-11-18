@@ -2,10 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Eneba Marketplace</title>
+    <title>Eneba Marketplace | Cheap game keys</title>
+    <meta name="description" content="A demo game key marketplace in Eneba's style: compare sellers' prices for PC, PlayStation, Xbox and Nintendo Switch keys. Payments are simulated." />
     <meta name="theme-color" content="#4618ac" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- Every page calls the API and shows Steam artwork: open both connections while the JS loads. -->
+    <link rel="preconnect" href="%VITE_API_URL%" crossorigin />
+    <link rel="preconnect" href="https://shared.akamai.steamstatic.com" />
+    <meta name="api-base-url" content="%VITE_API_URL%" />
+    <script defer src="/prefetch.js"></script>
   </head>
   <body>
     <div id="root"></div>

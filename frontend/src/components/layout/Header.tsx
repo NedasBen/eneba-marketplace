@@ -1,9 +1,13 @@
-import { Link, NavLink } from 'react-router'
+import { Link, NavLink, useLocation } from 'react-router'
 import { useCatalogFilters } from '../../lib/api/catalog'
+import { useAuth } from '../../lib/auth/useAuth'
+import { loginPathFor } from '../../lib/auth/redirect'
 import { cartItemCount, useCart } from '../../lib/cart'
 import { cn } from '../../lib/cn'
 import { SearchBox } from '../search/SearchBox'
+import { Skeleton } from '../ui/Skeleton'
 import { Logo } from './Logo'
+import { UserMenu } from './UserMenu'
 
 function CartIcon() {
   return (
@@ -37,6 +41,33 @@ function CartLink() {
         </span>
       )}
     </Link>
+  )
+}
+
+/** Log in | Register for guests, the user menu when signed in. */
+function AccountArea() {
+  const { status, user } = useAuth()
+  const location = useLocation()
+
+  // Checking a stored token: hold the space so the header doesn't flash "Log in".
+  if (status === 'loading') return <Skeleton className="h-[22px] w-[120px]" />
+
+  if (status === 'authenticated' && user) return <UserMenu user={user} icon={<UserIcon />} />
+
+  return (
+    <div className="flex items-center gap-1">
+      <UserIcon />
+      {/* Come back to this page after logging in (auth pages map to plain /login). */}
+      <Link to={loginPathFor(`${location.pathname}${location.search}`)} className="transition-colors hover:text-accent">
+        Log in
+      </Link>
+      <span aria-hidden className="text-muted">
+        |
+      </span>
+      <Link to="/register" className="transition-colors hover:text-accent">
+        Register
+      </Link>
+    </div>
   )
 }
 
@@ -81,18 +112,7 @@ export function Header() {
 
         <div className="ml-auto flex items-center gap-5 text-sm font-semibold">
           <CartLink />
-          <div className="flex items-center gap-1">
-            <UserIcon />
-            <Link to="/login" className="transition-colors hover:text-accent">
-              Log in
-            </Link>
-            <span aria-hidden className="text-muted">
-              |
-            </span>
-            <Link to="/register" className="transition-colors hover:text-accent">
-              Register
-            </Link>
-          </div>
+          <AccountArea />
         </div>
       </div>
       <CategoryNav />

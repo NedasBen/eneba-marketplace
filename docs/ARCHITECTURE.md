@@ -413,8 +413,25 @@ sequenceDiagram
 
 ## Authentication & token storage
 
-- `POST /auth/register` and `POST /auth/login` return a Sanctum personal access token, which expires after 7 days (`sanctum.expiration`). `POST /auth/logout` revokes it on the server.
-- The SPA stores the token in **`localStorage`** and an Axios interceptor sends it as `Authorization: Bearer <token>`. On a `401` the interceptor clears the token and redirects to `/login?redirect=…`.
+- `POST /auth/register` and `POST /auth/login` return a Sanctum personal access token with its own `expires_at`, 7 days by default (`AUTH_TOKEN_TTL_MINUTES`, read from `config/auth.php`). Sanctum rejects an expired token with `401`. `POST /auth/logout` deletes only the token that made the request, so other devices stay signed in.
+- **Passwords:** at least 8 characters with at least one letter and one number (`Password::min(8)->letters()->numbers()`), and confirmed. There's no "have I been pwned" lookup, which keeps the API from depending on an outside service. Emails are trimmed and lowercased before the `unique:users` check, so `Demo@Example.com` can't register twice.
+- **No account enumeration:**
+  - An unknown email and a wrong password return the same `422` with the same message (`auth.failed`).
+  - Both take the same time: when the email doesn't exist, `Hash::check` still runs against a fixed bcrypt hash of the same cost.
+- **Rate limits:**
+  - Login allows 5 failed attempts per email + IP. The next one gets `429` with `Retry-After`, even if the password is right. A successful login resets the counter.
+  - On top of that, register and login share a limit of 20 requests a minute per IP (the `auth` limiter), which slows credential stuffing across many emails.
+- **Unauthenticated API requests** always get a JSON `401 {"message":"Unauthenticated."}`, never a redirect, even when there's no `Accept` header (`bootstrap/app.php`).
+- **SPA side:**
+  - `lib/auth/token.ts` keeps the token in `localStorage`, with an in-memory fallback when storage is blocked. `lib/api/client.ts` sends it as `Authorization: Bearer <token>`.
+  - `AuthProvider` (`lib/auth/AuthContext.tsx`, mounted in `AppLayout`) checks a stored token once with `GET /auth/me` at start-up. A token that has expired just means "guest", with no redirect.
+  - After that, any `401` on a request that carried a token clears the token and goes to `/login?redirect=<current path + query>`. The login page sends the user back there afterwards.
+  - Logout clears the token locally even if the API call fails.
+- **No open redirect:** `?redirect=` goes through `safeRedirectPath` (`lib/auth/redirect.ts`, unit-tested), and anything it rejects falls back to `/`. It accepts only same-origin paths. It rejects:
+  - absolute URLs, and protocol-relative ones like `//host` or `/\host`;
+  - encoded slashes and backslashes (`/%2F…`, `/%5C…`);
+  - control characters, `javascript:` and `data:`;
+  - the auth pages themselves.
 - CORS allows only the frontend origin (`FRONTEND_URL`). No credentials or cookies are involved.
 
 **The XSS trade-off.** Any JavaScript running on the page can read `localStorage`, so a single XSS bug would let an attacker *steal* the token and use it elsewhere until it expires. An `HttpOnly` cookie can't be read by JS. However, XSS can still make authenticated requests from inside the page in either model, so preventing XSS is the real defence whichever storage we pick. Mitigations:
@@ -437,9 +454,9 @@ All responses are JSON. Collections use `{ data, links, meta }` (Laravel paginat
 
 | Method | Path | Body / Query | Success | Errors |
 |---|---|---|---|---|
-| POST | `/auth/register` | `name, email, password, password_confirmation` | `201 { user, token }` | 422 |
-| POST | `/auth/login` | `email, password` | `200 { user, token }` | 422 invalid credentials, 429 (5/min per email+IP) |
-| POST | `/auth/logout` 🔒 | — | `204` | 401 |
+| POST | `/auth/register` | `name, email, password, password_confirmation` | `201 { user, token, expires_at }` | 422, 429 (20/min per IP) |
+| POST | `/auth/login` | `email, password` | `200 { user, token, expires_at }` | 422 invalid credentials (same message for unknown email and wrong password), 429 with `Retry-After` (5 failures per email+IP, 20/min per IP) |
+| POST | `/auth/logout` 🔒 | — | `204` (revokes the current token only) | 401 |
 | GET | `/auth/me` 🔒 | — | `200 { user }` | 401 |
 
 ### Catalog & search
@@ -520,7 +537,7 @@ Rails share `ProductRailBlock`, which applies `settings.limit` (default 12, max 
 
 ### Cart 🔒
 
-Guests keep a cart in `localStorage` (`lib/cart.ts`). It is sent to `/cart/merge` right after login or registration.
+Guests keep a cart in `localStorage` (`lib/cart.ts`). It stays there after login for now. Once the server cart exists, it will be sent to `/cart/merge` right after login or registration.
 
 **Saved prices are for display only.**
 - Each cart line stores a *snapshot* (name, seller, unit price) so the cart can render instantly.
@@ -587,14 +604,15 @@ Guests keep a cart in `localStorage` (`lib/cart.ts`). It is sent to `/cart/merge
 frontend/src/
   index.css               tokens (@theme), fonts, base styles
   main.tsx                QueryClient (no retries on 4xx) + RouterProvider
-  routes/                 router.tsx (all routes, lazy dev page), RequireAuth.tsx
-  lib/api/                client.ts (apiGet, ApiError with 422 field errors), types.ts, catalog.ts (query options + hooks)
+  routes/                 router.tsx (all routes, lazy dev page), RequireAuth.tsx (waits for the session check, then guests → /login?redirect=)
+  lib/api/                client.ts (apiRequest/apiGet, Bearer token, 401 → onUnauthorized, ApiError with field errors + retryAfter), auth.ts, types.ts, catalog.ts (query options + hooks)
+  lib/auth/               token.ts, redirect.ts (safeRedirectPath, loginPathFor), AuthContext.tsx + useAuth.ts, passwordRules.ts
   lib/                    format.ts (Intl EUR), cn.ts
   hooks/                  useDebouncedValue
-  components/ui/          Button (+ buttonStyles), Badge, PriceTag, ProductCard, Skeleton
+  components/ui/          Button (+ buttonStyles), Badge, PriceTag, ProductCard, Skeleton, TextField
   components/search/      SearchBox (ARIA 1.2 combobox)
-  components/layout/      AppLayout, Header (platform links from /catalog/filters), Footer (Steam credit), Logo
-  pages/                  placeholders per route, dev/ComponentsPage
+  components/layout/      AppLayout (AuthProvider), Header (platform links from /catalog/filters), UserMenu (My orders, Log out), Footer (Steam credit), Logo
+  pages/                  home, store, product, cart, auth (LoginPage with demo button, RegisterPage with live password rules), placeholders, dev/ComponentsPage
 ```
 
 **Header search:**

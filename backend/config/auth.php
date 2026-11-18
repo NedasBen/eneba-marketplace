@@ -114,4 +114,18 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    /*
+    |--------------------------------------------------------------------------
+    | API tokens
+    |--------------------------------------------------------------------------
+    |
+    | Lifetime of the Sanctum personal access tokens issued at login and
+    | registration (stored as each token's expires_at; default 7 days).
+    |
+    */
+
+    'api_tokens' => [
+        'ttl_minutes' => (int) env('AUTH_TOKEN_TTL_MINUTES', 60 * 24 * 7),
+    ],
+
 ];

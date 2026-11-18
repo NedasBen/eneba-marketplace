@@ -37,6 +37,9 @@ class AppServiceProvider extends ServiceProvider
         // Autocomplete fires on keystrokes: generous, but bounded per client.
         RateLimiter::for('search', fn (Request $request): Limit => Limit::perMinute(60)->by($request->ip()));
 
+        // Login/register ceiling per IP, so one client can't cycle through many emails.
+        RateLimiter::for('auth', fn (Request $request): Limit => Limit::perMinute(20)->by($request->ip()));
+
         // `optimize` caches the discovered homepage block providers, `optimize:clear` removes them.
         $this->optimizes(optimize: 'homepage:cache', clear: 'homepage:clear', key: 'homepage-blocks');
     }

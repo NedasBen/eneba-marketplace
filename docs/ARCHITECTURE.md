@@ -261,8 +261,8 @@ Because nothing is `+= 1`, running it twice, or for every product at once, alway
 1. **Lazy expiry keeps money and keys correct.** Checkout picks keys with `status = 'available' OR (status = 'reserved' AND reserved_until < now())` using `FOR UPDATE SKIP LOCKED`, so an expired hold is free stock the moment it expires, with no background job involved. Payment locks the order row and rejects it once `expires_at` has passed (`410`). It then marks keys sold with `WHERE order_item_id = <this order's items> AND status = 'reserved'` and requires the affected row count to equal the quantity, otherwise it rolls back. A late payment can therefore never take keys another buyer has already claimed, and a key is never sold twice.
 2. **A sweep keeps stored state tidy.** Lazy expiry alone leaves two cosmetic gaps: orders stay `pending` in the database, and product aggregates show an offer as sold out until something recomputes them. `ReleaseExpiredReservations` fixes both in one transaction: pending orders past `expires_at` → `expired`, their reserved keys → `available`, then a refresh of the affected products. It runs:
    - at the start of every checkout;
-   - on catalog reads, throttled to at most once a minute (a cache lock), which is cheap thanks to the partial index on pending `expires_at`;
-   - from `routes/console.php` every minute wherever a scheduler exists (`php artisan schedule:work` locally);
+   - on catalog reads (products, offers, filters, homepage), at most once a minute (`Cache::add`), after the response has been sent (`defer()`), which is cheap thanks to the partial index on pending `expires_at`;
+   - as `php artisan orders:release-expired`, scheduled every minute in `routes/console.php` wherever a scheduler exists (`php artisan schedule:work` locally);
    - optionally from a free external pinger (e.g. a GitHub Actions cron calling a token-protected endpoint), which is not needed for correctness.
    
    While the Render instance sleeps nobody can see stale data, and the first request after it wakes runs the sweep. Order API responses also report a pending order past `expires_at` as `expired`, even before the sweep has written it.
@@ -410,6 +410,31 @@ sequenceDiagram
 ```
 
 `SKIP LOCKED` means two buyers racing for the last key never block each other and never receive the same key. One gets it and the other gets a 409.
+
+**How it's built** (`Services/Checkout`, `Services/Payments`):
+
+- **Checkout** (`CheckoutService`):
+  1. Runs the expiry sweep.
+  2. Locks the user's row. This is the same per-user lock the cart uses, so one user's checkouts and cart changes run one after another.
+  3. Returns the existing order for a repeated `Idempotency-Key`; the `(user_id, idempotency_key)` unique index backs this up.
+  4. Releases the user's other pending orders, so two tabs can't hold twice the keys.
+  5. Locks keys per line in offer-id order. A paused offer counts as 0 available.
+  6. If any line is short, it rolls everything back (the release above included) and returns `409 { message, shortages[{ offer_id, product_name, seller_name, requested, available }] }`.
+  7. Otherwise it creates the order and its items, copying name, seller and price from the current offer, never from the client. The keys become `reserved` with `order_item_id` set and `reserved_until = expires_at`.
+  8. Refreshes product stats in the same transaction.
+- **Payment** (`OrderPaymentService`), in one transaction holding the order's row lock:
+  1. A paid order returns `200` with its keys and no charge.
+  2. An expired order returns `410`.
+  3. The order's reserved keys are locked **before** charging and counted against the ordered quantity. A lapsed hold that another checkout has re-reserved points at that checkout's item, so the count comes up short and the order expires (`410`) without a charge. While the locks are held, a new checkout's `SKIP LOCKED` passes over these keys even if the deadline goes by mid-payment.
+  4. `PaymentGateway::charge()`. Every attempt is stored as a `payments` row with the card's last four digits; the number and CVC are never stored or logged.
+  5. A decline returns `402 { message, failure_code }`, and the order stays pending so the user can retry.
+  6. Success marks the keys `sold` (the affected rows must equal the quantity, otherwise it rolls back), sets the order to `paid` with `paid_at`, deletes the cart lines for the bought offers, and refreshes product stats (`sold_count`).
+- **The charge happens under the lock.** That's fine for the simulated gateway, which answers instantly. A real provider would use payment intents and a webhook instead of a synchronous charge.
+- **Only the three test cards are accepted.** Any other number that passes the Luhn check gets `422 "This is a demo: use one of the test cards."`, so nobody types a real card into the demo.
+- **Pay is throttled** to 10 attempts a minute per user.
+- **Orders are looked up through the signed-in user.** Another user's reference returns the same `404` as a missing one.
+- **Tested with real locks.** `tests/Concurrency` (its own Pest suite with `DatabaseTruncation`, because it needs committed data) runs a checkout on a second Postgres connection with its transaction left open, then a competing checkout on the first connection. `lock_timeout` makes any lock wait fail the test instead of hanging. Without `SKIP LOCKED`, the competing checkout waits and the test fails.
+
 
 **Simulated test cards** (Luhn-validated, any future expiry, any 3-digit CVC):
 
@@ -607,10 +632,12 @@ Every endpoint returns the whole cart (`{ data: { items, item_count, total } }`)
 
 | Method | Path | Body / Headers | Success | Errors |
 |---|---|---|---|---|
-| POST | `/checkout` | Header `Idempotency-Key: <uuid>` | `201` pending order (`reference`, items, total, `expires_at`). A repeated key returns `200` with the same order | 422 empty cart, 409 `{ shortages[] }` |
-| POST | `/orders/{reference}/pay` | `card_number, expiry_month, expiry_year, cvc, cardholder_name` | `200` paid order **with keys** (idempotent if already paid) | 402 `{ failure_code }`, 410 expired, 403 not owner, 422 |
-| GET | `/orders` | `page` | `200` paginated order history (newest first) | |
-| GET | `/orders/{reference}` | — | `200` order. Keys are included only when `status = paid` | 403 not owner, 404 |
+| POST | `/checkout` | Header `Idempotency-Key: <uuid>` | `201` pending order. A repeated key returns `200` with the same order | 422 empty cart or missing/invalid key, 409 `{ message, shortages[] }` |
+| POST | `/orders/{reference}/pay` | `card_number` (spaces allowed), `expiry_month`, `expiry_year` (4 digits), `cvc`, `cardholder_name` | `200` paid order **with keys** (repeat calls don't charge again) | 402 `{ message, failure_code }`, 410 expired, 404 missing or not yours, 422 invalid or non-test card, 429 |
+| GET | `/orders/{reference}` | — | `200` order. A pending order past `expires_at` shows as `expired`; keys only when `paid` | 404 missing or not yours |
+| GET | `/orders` *(planned)* | `page` | `200` paginated order history (newest first) | |
+
+An order is `{ reference, status, total, expires_at, paid_at, created_at, server_time, items[{ id, product_name, seller_name, product_slug, cover_image_url, platform_name, region_name, quantity, unit_price, line_total, keys?[{ id, code }] }] }`. Prices are the checkout snapshots. The client runs its countdown from `server_time`, so a device with a wrong clock still shows the right time left.
 
 ### Ops
 
@@ -629,8 +656,9 @@ Every endpoint returns the whole cart (`{ data: { items, item_count, total } }`)
 | `/store` | Catalog + filters + sort. `?q=` turns it into search results, and all filter state lives in the URL | |
 | `/product/:slug` | Product page: summary and edition switcher, screenshot lightbox, sticky "Best offer" buy box, every seller offer ("Load more"), description and details. Sold-out and 404 states | |
 | `/cart` | Guest or server cart with live price/stock notices and one-time merge notices; the header badge shows the item count. Guests check out via "Log in to check out" (`/login?redirect=/cart`) | |
-| `/checkout/:reference` | Payment form for a pending order | 🔒 |
-| `/orders`, `/orders/:reference` | Order history, order detail with keys | 🔒 |
+| `/checkout/:reference` | Order summary, reservation countdown (server clock), simulated card form with clickable test cards, decline message with retry, expired screen. Started by the cart's Checkout button, whose idempotency key stays the same until the cart changes | 🔒 |
+| `/orders/:reference` | Order detail; after payment, the success page with each key and a Copy button (Clipboard API, with select-and-Ctrl+C as the fallback) | 🔒 |
+| `/orders` | Order history *(placeholder)* | 🔒 |
 | `/login`, `/register` | Auth (honours `?redirect=`) | |
 | `/dev/components` | Component showcase for comparing against eneba.com. Deployed but not linked anywhere; served with `X-Robots-Tag: noindex` | |
 
@@ -710,9 +738,11 @@ backend/app/
   Services/Catalog/          SteamStoreClient, SteamGameNormalizer, ProductStockAggregator,
                              CatalogFilters, ProductCatalogQuery
   Services/Search/           GameSearch, GameSearchText, QueryCorrector, SearchTerm, SearchVocabulary
+  Services/Cart/             CartService (caps, per-user lock, idempotent merge)
   Services/Checkout/         CheckoutService (reserve), OrderPaymentService (pay),
-                             ReleaseExpiredReservations (sweep)                          (planned)
-  Services/Payments/         PaymentGateway (interface), SimulatedPaymentGateway         (planned)
+                             ReleaseExpiredReservations (sweep), PaymentOutcome, InsufficientStockException (409)
+  Services/Payments/         PaymentGateway (interface), SimulatedPaymentGateway, TestCards, CardDetails
+  Http/Middleware/           SweepExpiredReservations (catalog reads: throttled sweep via defer())
   Services/Homepage/         HomepageBlockProvider (interface), ProductRailBlock (base),
                              HomepageBlockRegistry (discovery), HomepageBuilder (timeouts, isolation, cache)
   Services/Homepage/Blocks/  HeroBanner, BestSellers, Deals, NewReleases, GenreRail (one class per block type)

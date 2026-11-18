@@ -4,7 +4,9 @@ import { NotFoundPage, PlaceholderPage } from '../pages/PlaceholderPage'
 import { LoginPage } from '../pages/auth/LoginPage'
 import { RegisterPage } from '../pages/auth/RegisterPage'
 import { CartPage } from '../pages/cart/CartPage'
+import { CheckoutPage } from '../pages/checkout/CheckoutPage'
 import { HomePage } from '../pages/home/HomePage'
+import { OrderPage } from '../pages/orders/OrderPage'
 import { ProductPage } from '../pages/product/ProductPage'
 import { StorePage } from '../pages/store/StorePage'
 import { RequireAuth } from './RequireAuth'
@@ -23,9 +25,9 @@ export const router = createBrowserRouter([
       {
         element: <RequireAuth />,
         children: [
-          { path: 'checkout/:reference', element: <PlaceholderPage title="Checkout" description="Pay for a pending order." /> },
+          { path: 'checkout/:reference', element: <CheckoutPage /> },
           { path: 'orders', element: <PlaceholderPage title="My orders" description="Order history." /> },
-          { path: 'orders/:reference', element: <PlaceholderPage title="Order" description="Order details and keys." /> },
+          { path: 'orders/:reference', element: <OrderPage /> },
         ],
       },
       // Component showcase for comparing against eneba.com: deployed, but not linked anywhere.

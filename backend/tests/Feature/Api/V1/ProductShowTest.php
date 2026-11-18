@@ -7,6 +7,8 @@ use App\Models\Product;
 use App\Models\ProductKey;
 use App\Models\Region;
 use App\Models\Seller;
+use App\Services\Checkout\ReleaseExpiredReservations;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 
@@ -151,6 +153,9 @@ it('returns 404 with a plain message for an unknown slug', function () {
 });
 
 it('uses the same number of queries however many offers and editions exist', function () {
+    // Count the product page's queries only, not the throttled reservation sweep.
+    Cache::put(ReleaseExpiredReservations::THROTTLE_KEY, true, 60);
+
     $countQueries = function (string $slug): int {
         DB::flushQueryLog();
         DB::enableQueryLog();

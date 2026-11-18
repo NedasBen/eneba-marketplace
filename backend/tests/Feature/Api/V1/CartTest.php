@@ -2,31 +2,9 @@
 
 use App\Models\CartItem;
 use App\Models\CartMerge;
-use App\Models\Offer;
 use App\Models\ProductKey;
 use App\Models\User;
 use Illuminate\Support\Str;
-use Laravel\Sanctum\Sanctum;
-
-/**
- * An active offer with `$stock` keys in stock.
- */
-function stockedOffer(int $stock = 20, int $priceCents = 1999, array $attributes = []): Offer
-{
-    $offer = Offer::factory()->for(catalogProduct())->create(['price_cents' => $priceCents, ...$attributes]);
-    ProductKey::factory()->count($stock)->for($offer)->create();
-
-    return $offer;
-}
-
-function signedIn(?User $user = null): User
-{
-    $user ??= User::factory()->create();
-    app('auth')->forgetGuards();
-    Sanctum::actingAs($user);
-
-    return $user;
-}
 
 /**
  * @param  list<array{offer_id: int, quantity: int}>  $items

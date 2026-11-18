@@ -10,13 +10,16 @@ export class ApiError extends Error {
   readonly errors: Record<string, string[]>
   /** Seconds from a 429's Retry-After header. */
   readonly retryAfter: number | null
+  /** The whole JSON error body, for endpoint-specific fields (e.g. checkout's `shortages`). */
+  readonly body: Record<string, unknown>
 
-  constructor(status: number, message: string, errors: Record<string, string[]> = {}, retryAfter: number | null = null) {
+  constructor(status: number, message: string, errors: Record<string, string[]> = {}, retryAfter: number | null = null, body: Record<string, unknown> = {}) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.errors = errors
     this.retryAfter = retryAfter
+    this.body = body
   }
 
   /** 0 means the request never got a response (network down, API asleep). */
@@ -65,6 +68,8 @@ export function toQueryString(params: Record<string, QueryValue> = {}): string {
 interface RequestOptions {
   params?: Record<string, QueryValue>
   body?: unknown
+  /** Extra request headers, e.g. `Idempotency-Key`. */
+  headers?: Record<string, string>
   signal?: AbortSignal
   /**
    * Whether a 401 should end the session with a redirect to /login. Off for
@@ -79,7 +84,7 @@ interface RequestOptions {
  */
 export async function apiRequest<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, options: RequestOptions = {}): Promise<T> {
   const token = getToken()
-  const headers: Record<string, string> = { Accept: 'application/json' }
+  const headers: Record<string, string> = { ...options.headers, Accept: 'application/json' }
   if (token) headers.Authorization = `Bearer ${token}`
   if (options.body !== undefined) headers['Content-Type'] = 'application/json'
 
@@ -103,10 +108,10 @@ export async function apiRequest<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   }
 
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { message?: string; errors?: Record<string, string[]> }
+    const body = (await response.json().catch(() => ({}))) as { message?: string; errors?: Record<string, string[]> } & Record<string, unknown>
     const retryAfter = Number(response.headers.get('Retry-After'))
 
-    throw new ApiError(response.status, body.message ?? `Request failed (${response.status})`, body.errors, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null)
+    throw new ApiError(response.status, body.message ?? `Request failed (${response.status})`, body.errors, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null, body)
   }
 
   if (response.status === 204) return undefined as T

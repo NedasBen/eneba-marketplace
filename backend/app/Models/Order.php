@@ -57,6 +57,19 @@ class Order extends Model
     }
 
     /**
+     * The status as it really stands: a pending order past its deadline is
+     * expired even before the sweep has written that down.
+     */
+    public function effectiveStatus(): OrderStatus
+    {
+        if ($this->status === OrderStatus::Pending && $this->expires_at->isPast()) {
+            return OrderStatus::Expired;
+        }
+
+        return $this->status;
+    }
+
+    /**
      * @return BelongsTo<User, $this>
      */
     public function user(): BelongsTo

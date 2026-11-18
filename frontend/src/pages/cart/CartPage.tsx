@@ -1,13 +1,17 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { Container } from '../../components/layout/Container'
 import { Button, ButtonLink } from '../../components/ui/Button'
 import { Skeleton } from '../../components/ui/Skeleton'
+import { CART_QUERY_KEY } from '../../lib/api/cart'
 import { ApiError } from '../../lib/api/client'
+import { orderQueries, ordersApi, type Shortage } from '../../lib/api/orders'
 import { loginPathFor } from '../../lib/auth/redirect'
 import { MAX_QUANTITY } from '../../lib/cart'
 import type { CartLine, CartNotice } from '../../lib/cartReconcile'
 import { mergeNotices, useMergeNotices } from '../../lib/cartSession'
+import { checkoutKeys } from '../../lib/checkoutKey'
 import { formatMoney } from '../../lib/format'
 import { useCartActions, useCartLines } from '../../lib/useCartState'
 
@@ -109,6 +113,67 @@ function CartRow({ line }: { line: CartLine }) {
   )
 }
 
+/**
+ * Starts checkout: reserves the keys and opens the payment page. The
+ * idempotency key stays the same for an unchanged cart, so a double click
+ * or a retry after a network error can't create a second order.
+ */
+function CheckoutButton({ lines, disabled }: { lines: CartLine[]; disabled: boolean }) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [shortages, setShortages] = useState<Shortage[]>([])
+
+  const start = async () => {
+    setPending(true)
+    setError(null)
+    setShortages([])
+
+    try {
+      const order = await ordersApi.checkout(checkoutKeys.keyFor(lines))
+      checkoutKeys.reset()
+      queryClient.setQueryData(orderQueries.detail(order.reference).queryKey, order)
+      await navigate(`/checkout/${order.reference}`)
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 409) {
+        setShortages((caught.body.shortages as Shortage[] | undefined) ?? [])
+        setError(caught.message)
+        void queryClient.invalidateQueries({ queryKey: CART_QUERY_KEY })
+      } else if (caught instanceof ApiError && caught.status === 422) {
+        setError(caught.fieldError('cart') ?? caught.message)
+      } else {
+        setError(caught instanceof ApiError && caught.isNetworkError ? 'Could not reach the server. Try again.' : 'Could not start checkout. Try again.')
+      }
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <>
+      <Button fullWidth loading={pending} disabled={disabled} onClick={() => void start()}>
+        Checkout
+      </Button>
+      {error && (
+        <div role="alert" className="flex flex-col gap-1 text-xs font-semibold text-warning">
+          <p>{error}</p>
+          {shortages.length > 0 && (
+            <ul className="list-disc pl-4">
+              {shortages.map((shortage) => (
+                <li key={shortage.offer_id}>
+                  {shortage.product_name} ({shortage.seller_name}):{' '}
+                  {shortage.available === 0 ? 'none left' : `only ${shortage.available} left, you have ${shortage.requested}`}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
 /** What changed when the guest cart was merged at sign-in; shown once. */
 function MergeNotices() {
   const messages = useMergeNotices()
@@ -176,13 +241,11 @@ export function CartPage() {
                 Log in to check out
               </ButtonLink>
             ) : (
-              <Button fullWidth disabled>
-                Checkout
-              </Button>
+              <CheckoutButton lines={view.lines} disabled={blocked || view.total === null} />
             )}
             <p className="text-xs text-muted">
               {blocked ? 'Resolve the notices above to continue. ' : ''}
-              {view.source === 'guest' ? 'Your cart is kept when you log in. ' : 'Checkout arrives in the next step. '}
+              {view.source === 'guest' ? 'Your cart is kept when you log in. ' : 'Your keys are reserved for 15 minutes while you pay. '}
               Prices are confirmed by the server at checkout.
             </p>
           </aside>

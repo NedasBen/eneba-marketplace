@@ -1,5 +1,7 @@
 <?php
 
+use App\Services\Checkout\ReleaseExpiredReservations;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -183,6 +185,9 @@ it('returns 422 for invalid filters', function (string $query, string $field) {
 ]);
 
 it('uses the same number of queries however many products are on the page', function () {
+    // Count the listing's queries only, not the throttled reservation sweep.
+    Cache::put(ReleaseExpiredReservations::THROTTLE_KEY, true, 60);
+
     $countQueries = function (): int {
         DB::flushQueryLog();
         DB::enableQueryLog();

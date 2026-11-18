@@ -3,11 +3,16 @@
 use App\Enums\GamePlatform;
 use App\Models\Game;
 use App\Models\Genre;
+use App\Models\Offer;
 use App\Models\Platform;
 use App\Models\Product;
+use App\Models\ProductKey;
 use App\Models\Region;
+use App\Models\User;
+use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 /*
@@ -24,6 +29,13 @@ use Tests\TestCase;
 pest()->extend(TestCase::class)
     ->use(LazilyRefreshDatabase::class)
     ->in('Feature');
+
+// Tests that need committed data visible to a second database connection
+// (real lock contention), so no wrapping transaction: tables are truncated
+// after each test instead.
+pest()->extend(TestCase::class)
+    ->use(DatabaseTruncation::class)
+    ->in('Concurrency');
 
 /*
 |--------------------------------------------------------------------------
@@ -73,4 +85,29 @@ function catalogProduct(string $platform = 'pc', string $region = 'europe', arra
         ->for($platformModel)
         ->for($regionModel)
         ->create(array_replace(['retail_price_cents' => 5999, 'min_price_cents' => 1999, 'offers_count' => 2], $attributes));
+}
+
+/**
+ * An active offer with `$stock` keys in stock.
+ *
+ * @param  array<string, mixed>  $attributes  offer attributes
+ */
+function stockedOffer(int $stock = 20, int $priceCents = 1999, array $attributes = []): Offer
+{
+    $offer = Offer::factory()->for(catalogProduct())->create(['price_cents' => $priceCents, ...$attributes]);
+    ProductKey::factory()->count($stock)->for($offer)->create();
+
+    return $offer;
+}
+
+/**
+ * Authenticate the next requests as `$user` (a new user by default).
+ */
+function signedIn(?User $user = null): User
+{
+    $user ??= User::factory()->create();
+    app('auth')->forgetGuards();
+    Sanctum::actingAs($user);
+
+    return $user;
 }

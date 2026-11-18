@@ -4,6 +4,8 @@ namespace App\Providers;
 
 use App\Database\PostgresConnection;
 use App\Services\Homepage\HomepageBlockRegistry;
+use App\Services\Payments\PaymentGateway;
+use App\Services\Payments\SimulatedPaymentGateway;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Connection;
 use Illuminate\Database\Eloquent\Model;
@@ -20,6 +22,9 @@ class AppServiceProvider extends ServiceProvider
     {
         // One registry per request/process, so discovered providers are resolved once.
         $this->app->singleton(HomepageBlockRegistry::class);
+
+        // The only payment provider in this demo (test cards, no money moves).
+        $this->app->bind(PaymentGateway::class, SimulatedPaymentGateway::class);
 
         // Boolean-safe bindings for emulated prepares (needed behind Neon's pooler).
         Connection::resolverFor('pgsql', fn ($pdo, string $database, string $prefix, array $config): PostgresConnection => new PostgresConnection($pdo, $database, $prefix, $config));
@@ -39,6 +44,9 @@ class AppServiceProvider extends ServiceProvider
 
         // Login/register ceiling per IP, so one client can't cycle through many emails.
         RateLimiter::for('auth', fn (Request $request): Limit => Limit::perMinute(20)->by($request->ip()));
+
+        // Card attempts per user: enough for a few retries, not for guessing cards.
+        RateLimiter::for('payments', fn (Request $request): Limit => Limit::perMinute(10)->by((string) $request->user()?->id ?: $request->ip()));
 
         // `optimize` caches the discovered homepage block providers, `optimize:clear` removes them.
         $this->optimizes(optimize: 'homepage:cache', clear: 'homepage:clear', key: 'homepage-blocks');

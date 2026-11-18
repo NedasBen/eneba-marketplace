@@ -2,6 +2,7 @@
 
 namespace App\Services\Catalog;
 
+use App\Models\ProductKey;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -31,10 +32,7 @@ class ProductStockAggregator
         FROM products p
         LEFT JOIN offers o ON o.product_id = p.id
         LEFT JOIN LATERAL (
-            SELECT COUNT(*) FILTER (
-                       WHERE pk.status = 'available'
-                          OR (pk.status = 'reserved' AND pk.reserved_until < now())
-                   ) AS in_stock,
+            SELECT COUNT(*) FILTER (WHERE {IN_STOCK}) AS in_stock,
                    COUNT(*) FILTER (WHERE pk.status = 'sold') AS sold
             FROM product_keys pk
             WHERE pk.offer_id = o.id
@@ -75,7 +73,7 @@ class ProductStockAggregator
 
             DB::select("SELECT id FROM products p {$whereProducts} ORDER BY id FOR UPDATE", $bindings);
 
-            $statsSql = sprintf(self::STATS_SQL, $whereProducts);
+            $statsSql = $this->statsSql($whereProducts);
             $driftCondition = self::DRIFT_CONDITION;
 
             // Only rows that actually differ are written, so the return value
@@ -107,7 +105,7 @@ class ProductStockAggregator
         }
 
         [$whereProducts, $bindings] = $this->productFilter($productIds);
-        $statsSql = sprintf(self::STATS_SQL, $whereProducts);
+        $statsSql = $this->statsSql($whereProducts);
         $driftCondition = self::DRIFT_CONDITION;
 
         return DB::select(<<<SQL
@@ -121,6 +119,15 @@ class ProductStockAggregator
             WHERE {$driftCondition}
             ORDER BY p.id
             SQL, $bindings);
+    }
+
+    /**
+     * The stats query; "in stock" comes from ProductKey::inStockSql() so the
+     * product page and these aggregates share one definition.
+     */
+    private function statsSql(string $whereProducts): string
+    {
+        return sprintf(str_replace('{IN_STOCK}', ProductKey::inStockSql('pk'), self::STATS_SQL), $whereProducts);
     }
 
     /**

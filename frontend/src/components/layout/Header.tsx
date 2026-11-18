@@ -1,5 +1,6 @@
 import { Link, NavLink } from 'react-router'
 import { useCatalogFilters } from '../../lib/api/catalog'
+import { cartItemCount, useCart } from '../../lib/cart'
 import { cn } from '../../lib/cn'
 import { SearchBox } from '../search/SearchBox'
 import { Logo } from './Logo'
@@ -20,6 +21,22 @@ function UserIcon() {
       <circle cx="12" cy="8" r="4" />
       <path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" />
     </svg>
+  )
+}
+
+/** Cart icon with the number of keys in the guest cart. */
+function CartLink() {
+  const count = cartItemCount(useCart())
+
+  return (
+    <Link to="/cart" className="relative text-white transition-colors hover:text-accent" aria-label={count > 0 ? `Cart, ${count} ${count === 1 ? 'item' : 'items'}` : 'Cart'}>
+      <CartIcon />
+      {count > 0 && (
+        <span aria-hidden className="absolute -top-2 -right-2 grid h-[17px] min-w-[17px] place-items-center rounded-full bg-accent px-1 text-[10px] leading-none font-extrabold text-badge-ink">
+          {count > 99 ? '99+' : count}
+        </span>
+      )}
+    </Link>
   )
 }
 
@@ -63,9 +80,7 @@ export function Header() {
         </div>
 
         <div className="ml-auto flex items-center gap-5 text-sm font-semibold">
-          <Link to="/cart" className="relative text-white transition-colors hover:text-accent" aria-label="Cart">
-            <CartIcon />
-          </Link>
+          <CartLink />
           <div className="flex items-center gap-1">
             <UserIcon />
             <Link to="/login" className="transition-colors hover:text-accent">

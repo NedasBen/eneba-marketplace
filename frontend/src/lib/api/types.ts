@@ -104,6 +104,59 @@ export interface ProductRailData {
   see_all: string | null
 }
 
+export interface ProductOffer {
+  id: number
+  price: Money
+  stock: number
+  seller: {
+    name: string
+    slug: string
+    /** Positive feedback, 0-100. */
+    rating: number
+    feedback_count: number
+    country_code: string
+  }
+}
+
+export interface ProductEdition {
+  slug: string
+  name: string
+  platform: { slug: string; name: string; activation_service: string }
+  region: { slug: string; name: string }
+  price_from: Money | null
+  in_stock: boolean
+  is_current: boolean
+}
+
+export interface ProductDetail extends ProductCard {
+  game: ProductCard['game'] & {
+    short_description: string
+    description: string
+    header_image_url: string
+    hero_image_url: string | null
+    screenshots: string[]
+    genres: { slug: string; name: string }[]
+    developer: string | null
+    publisher: string | null
+    released_at: string | null
+    metacritic: number | null
+  }
+  /** Purchasable offers, cheapest first. */
+  offers: ProductOffer[]
+  /** Every edition of the game, this one included. */
+  editions: ProductEdition[]
+}
+
+/** Current state of an offer, for comparing against what the cart saved. */
+export interface OfferState {
+  id: number
+  is_active: boolean
+  price: Money
+  stock: number
+  seller: { name: string }
+  product: { slug: string; name: string }
+}
+
 export interface GameSuggestion {
   name: string
   slug: string

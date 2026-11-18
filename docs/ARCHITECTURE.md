@@ -226,7 +226,7 @@ Images are hotlinked from `*.steamstatic.com` (allowed in the CSP) rather than c
 
 **Recompute, don't increment.** `ProductStockAggregator::refresh($productIds)` recalculates all three columns from the source rows (offers and keys) in one `UPDATE … FROM (stats)` statement:
 
-- a key is **in stock** when it is `available`, or `reserved` with `reserved_until < now()`;
+- a key is **in stock** when it is `available`, or `reserved` with `reserved_until < now()`. That rule is defined once, in `ProductKey::inStockSql()` and the `ProductKey::inStock()` scope, and shared by these aggregates and the product page's per-offer stock;
 - `min_price_cents` = the cheapest active offer with stock (`null` if none);
 - `offers_count` = the number of such offers;
 - `sold_count` = the number of keys sold.
@@ -447,7 +447,8 @@ All responses are JSON. Collections use `{ data, links, meta }` (Laravel paginat
 | Method | Path | Body / Query | Success |
 |---|---|---|---|
 | GET | `/products` | `q`, `platform[]`, `region[]`, `genre[]`, `price_min`, `price_max` (EUR), `in_stock` (bool, default true), `sort` = `relevance\|popularity\|price_asc\|price_desc\|discount\|release_date\|name` (`discount` = biggest percentage saved against retail first, sold-out last, ties by sales), `page`, `per_page` (≤ 48) | `200` paginated product cards (name, slug, cover, platform, region, `from` price, discount %, offers_count) |
-| GET | `/products/{slug}` | — | `200` product + game (description, genres, screenshots) + **offers** (cheapest first: seller, rating, price, stock) + other editions of the same game |
+| GET | `/products/{slug}` | — | `200 { data }`: the card fields, plus `game` (description, `screenshots[]`, `genres[]`, developer, publisher, `released_at`, `metacritic`), `offers[]` (purchasable only, cheapest first, ties by seller rating: `{ id, price, stock, seller { name, slug, rating, feedback_count, country_code } }`) and `editions[]` (every product of the game, with `is_current`). Unknown slug → `404 { message: "Product not found." }`. About 10 queries, constant |
+| GET | `/offers?ids=1,2,3` | ≤ 50 ids | `200` current `{ id, is_active, price, stock, seller, product }` per offer; unknown ids are left out. Used by the guest cart to detect price and stock changes |
 | GET | `/catalog/filters` | Same filter params as `/products` | `200 { platforms[], regions[], genres[] }` each with `count` under the current filters, plus `price: { min, max }`, `sorts[] { value, label }`, `default_sort`, `per_page { options, default }` |
 | GET | `/search/suggest` | `q` (≥ 2 characters, otherwise `data: []`) | `200 { data, query }`: up to 8 **games** (name, slug, cover, cheapest in-stock `price_from`, `platforms` with stock, `product_slug` of the cheapest in-stock product, `in_stock`). 60/min per IP |
 
@@ -519,7 +520,17 @@ Rails share `ProductRailBlock`, which applies `settings.limit` (default 12, max 
 
 ### Cart 🔒
 
-Guests keep a cart in `localStorage`. It is sent to `/cart/merge` right after login or registration.
+Guests keep a cart in `localStorage` (`lib/cart.ts`). It is sent to `/cart/merge` right after login or registration.
+
+**Saved prices are for display only.**
+- Each cart line stores a *snapshot* (name, seller, unit price) so the cart can render instantly.
+- The cart page re-checks every offer with `GET /offers?ids=` and flags these per line (`lib/cartReconcile.ts`, unit-tested):
+  - *price changed* (old → new);
+  - *out of stock*;
+  - *only N left*;
+  - *no longer available* (offer removed or paused).
+- Totals always use the current prices.
+- Checkout ignores client prices entirely: the server recomputes every line from the current offer and copies it into `order_items`.
 
 | Method | Path | Body | Success | Errors |
 |---|---|---|---|---|
@@ -553,8 +564,8 @@ Guests keep a cart in `localStorage`. It is sent to `/cart/merge` right after lo
 |---|---|---|
 | `/` | Homepage (block-driven) | |
 | `/store` | Catalog + filters + sort. `?q=` turns it into search results, and all filter state lives in the URL | |
-| `/product/:slug` | Product page + offer comparison | |
-| `/cart` | Cart (guest or server) | |
+| `/product/:slug` | Product page: summary and edition switcher, screenshot lightbox, sticky "Best offer" buy box, every seller offer ("Load more"), description and details. Sold-out and 404 states | |
+| `/cart` | Guest cart with live price/stock notices; the header badge shows the item count | |
 | `/checkout/:reference` | Payment form for a pending order | 🔒 |
 | `/orders`, `/orders/:reference` | Order history, order detail with keys | 🔒 |
 | `/login`, `/register` | Auth (honours `?redirect=`) | |

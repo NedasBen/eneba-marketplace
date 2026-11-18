@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Database\Factories\OfferFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -32,6 +33,26 @@ class Offer extends Model
             'price_cents' => 'integer',
             'is_active' => 'boolean',
         ];
+    }
+
+    /**
+     * Adds `stock` (keys in stock, see ProductKey::inStockSql()).
+     *
+     * @param  Builder<Offer>  $query
+     */
+    public function scopeWithStock(Builder $query): void
+    {
+        $query->withCount(['keys as stock' => fn (Builder $keys) => $keys->inStock()]);
+    }
+
+    /**
+     * Active offers with at least one key in stock: what a buyer can purchase.
+     *
+     * @param  Builder<Offer>  $query
+     */
+    public function scopePurchasable(Builder $query): void
+    {
+        $query->where('offers.is_active', true)->whereHas('keys', fn (Builder $keys) => $keys->inStock());
     }
 
     /**

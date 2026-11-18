@@ -1,7 +1,9 @@
 import { createBrowserRouter } from 'react-router'
 import { AppLayout } from '../components/layout/AppLayout'
 import { NotFoundPage, PlaceholderPage } from '../pages/PlaceholderPage'
+import { CartPage } from '../pages/cart/CartPage'
 import { HomePage } from '../pages/home/HomePage'
+import { ProductPage } from '../pages/product/ProductPage'
 import { StorePage } from '../pages/store/StorePage'
 import { RequireAuth } from './RequireAuth'
 
@@ -12,8 +14,8 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <HomePage /> },
       { path: 'store', element: <StorePage /> },
-      { path: 'product/:slug', element: <PlaceholderPage title="Product" description="Product details and seller offers." /> },
-      { path: 'cart', element: <PlaceholderPage title="Cart" description="Your cart." /> },
+      { path: 'product/:slug', element: <ProductPage /> },
+      { path: 'cart', element: <CartPage /> },
       { path: 'login', element: <PlaceholderPage title="Log in" description="Sign in to check out and see your orders." /> },
       { path: 'register', element: <PlaceholderPage title="Register" description="Create an account." /> },
       {

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\ProductKeyStatus;
 use Database\Factories\ProductKeyFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -33,6 +34,25 @@ class ProductKey extends Model
     protected $hidden = [
         'code',
     ];
+
+    /**
+     * The single definition of "in stock": available, or reserved with an
+     * expired hold (lazy expiry: an expired reservation is free stock).
+     * Used by the store aggregates and the product page's offer stock, so
+     * the two can never disagree.
+     */
+    public static function inStockSql(string $table = 'product_keys'): string
+    {
+        return "({$table}.status = 'available' OR ({$table}.status = 'reserved' AND {$table}.reserved_until < now()))";
+    }
+
+    /**
+     * @param  Builder<ProductKey>  $query
+     */
+    public function scopeInStock(Builder $query): void
+    {
+        $query->whereRaw(self::inStockSql($query->getModel()->getTable()));
+    }
 
     /**
      * @return array<string, string>

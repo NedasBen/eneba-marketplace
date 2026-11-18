@@ -2,8 +2,8 @@ import { Link, NavLink, useLocation } from 'react-router'
 import { useCatalogFilters } from '../../lib/api/catalog'
 import { useAuth } from '../../lib/auth/useAuth'
 import { loginPathFor } from '../../lib/auth/redirect'
-import { cartItemCount, useCart } from '../../lib/cart'
 import { cn } from '../../lib/cn'
+import { useCartCount } from '../../lib/useCartState'
 import { SearchBox } from '../search/SearchBox'
 import { Skeleton } from '../ui/Skeleton'
 import { Logo } from './Logo'
@@ -28,9 +28,9 @@ function UserIcon() {
   )
 }
 
-/** Cart icon with the number of keys in the guest cart. */
+/** Cart icon with the number of keys in the cart (guest or server). */
 function CartLink() {
-  const count = cartItemCount(useCart())
+  const count = useCartCount()
 
   return (
     <Link to="/cart" className="relative text-white transition-colors hover:text-accent" aria-label={count > 0 ? `Cart, ${count} ${count === 1 ? 'item' : 'items'}` : 'Cart'}>

@@ -49,7 +49,7 @@ export function LoginPage() {
     setError(null)
 
     try {
-      signIn(await authApi.login(credentials.email, credentials.password))
+      await signIn(await authApi.login(credentials.email, credentials.password))
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 429) {
         setLockedUntil(Date.now() + (caught.retryAfter ?? 60) * 1000)

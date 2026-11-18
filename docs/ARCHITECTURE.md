@@ -44,6 +44,7 @@ Game ──< Product (platform × region) ──< Offer (seller, price) ──< 
 erDiagram
     users ||--o{ personal_access_tokens : "owns"
     users ||--o{ cart_items : "has"
+    users ||--o{ cart_merges : "merged"
     users ||--o{ orders : "places"
 
     games ||--o{ products : "sold as"
@@ -148,6 +149,13 @@ erDiagram
         bigint user_id FK
         bigint offer_id FK
         smallint quantity "1-10"
+        int price_seen_cents "display only"
+    }
+    cart_merges {
+        bigint id PK
+        bigint user_id FK
+        uuid merge_id
+        jsonb adjustments
     }
     orders {
         bigint id PK
@@ -287,6 +295,8 @@ Primary keys and the index Postgres creates for every `UNIQUE` constraint are im
 | product_keys | `order_item_id` | B-tree | Showing keys on an order |
 | cart_items | `(user_id, offer_id)` | UNIQUE | Upsert on add-to-cart |
 | cart_items | `offer_id` | B-tree | FK |
+| cart_merges | `(user_id, merge_id)` | UNIQUE | Guest-cart merge idempotency |
+| cart_merges | `created_at` | B-tree | Pruning records older than 7 days |
 | orders | `reference` | UNIQUE | Public order URLs |
 | orders | `(user_id, idempotency_key)` | UNIQUE | Checkout idempotency |
 | orders | `(user_id, created_at)` | B-tree | Order history, newest first |
@@ -537,25 +547,61 @@ Rails share `ProductRailBlock`, which applies `settings.limit` (default 12, max 
 
 ### Cart 🔒
 
-Guests keep a cart in `localStorage` (`lib/cart.ts`). It stays there after login for now. Once the server cart exists, it will be sent to `/cart/merge` right after login or registration.
-
-**Saved prices are for display only.**
-- Each cart line stores a *snapshot* (name, seller, unit price) so the cart can render instantly.
-- The cart page re-checks every offer with `GET /offers?ids=` and flags these per line (`lib/cartReconcile.ts`, unit-tested):
+**Two carts, one view.**
+- Guests keep a cart in `localStorage` (`lib/cart.ts`).
+- Signed-in users have a server cart (`cart_items`).
+- The UI goes through `lib/useCartState.ts`:
+  - `useCartCount` drives the header badge;
+  - `useCartLines` drives the cart page;
+  - `useCartActions` adds, updates and removes lines.
+- Both carts become the same `CartLine` shape. Their notices come from one function in `lib/cartReconcile.ts`, so guests and signed-in users see the same notices:
   - *price changed* (old → new);
   - *out of stock*;
   - *only N left*;
   - *no longer available* (offer removed or paused).
-- Totals always use the current prices.
-- Checkout ignores client prices entirely: the server recomputes every line from the current offer and copies it into `order_items`.
+- While a stored token is still being checked, Add to cart waits, because the item could belong in either cart.
+
+**Saved prices are for display only.**
+- **Guest lines** store a *snapshot* (name, seller, unit price) so the cart can render instantly. The cart page re-checks every offer with `GET /offers?ids=`.
+- **Server lines** keep `price_seen_cents`, the offer's price when the line was last added. `GET /cart` returns it next to the offer's current price and stock. It is never read from the client and never used for a total.
+- Totals always use the current prices and count only lines that can be bought as they stand (active offer, enough stock).
+- Checkout ignores saved prices entirely. The server recomputes every line from the current offer and copies it into `order_items`.
+
+**Caps.** A line holds at most **10** keys, and no more than the offer has in stock (available keys plus expired reservations).
+- An add or update that would exceed either cap returns `422`, and the message gives the limit.
+- A line whose offer later goes inactive, or whose stock drops below its quantity, stays in the cart with a notice. It can be lowered or removed, but not raised.
+- Every cart write starts by locking the user's row (`SELECT … FOR UPDATE`). Concurrent requests for one cart (double clicks, two tabs, a retried merge) therefore run one after another, and the caps and the `(user_id, offer_id)` unique index always hold.
+- Lines are always looked up through the signed-in user. Another user's line id returns the same `404` as a missing one, so ids can't be probed.
+
+**Guest-cart merge.**
+- After login or registration, and before the session counts as signed in, the SPA sends the guest cart to `POST /cart/merge`. The page it returns to therefore already shows the merged cart.
+- Only offer ids and quantities are sent. The server:
+  - adds them to existing lines and clamps the sums to the caps;
+  - never lowers an existing line;
+  - skips unknown, inactive and sold-out offers.
+- The response reports each change, and the cart page shows those messages once.
+- On success the guest cart is cleared. On failure (network error, API asleep) it is kept, and the merge is retried on the next start-up while signed in.
+- **Idempotent:** each request carries a `merge_id` (a UUID).
+  - The guest cart keeps the same id until its contents change, then gets a new one (`cart.mergeId()`).
+  - The server records each processed id per user in `cart_merges`, in the same transaction as the cart writes.
+  - A repeat returns the stored adjustments and the current cart without applying the merge again, so a merge whose response was lost can't double the quantities.
+  - Records are pruned after 7 days: inline on the user's next merge (Render has no scheduler), and by `model:prune` wherever a scheduler runs.
+- **Logout, or an expired session:** the server-cart cache is dropped and the guest cart is cleared, leaving an empty guest cart.
+
+Every endpoint returns the whole cart (`{ data: { items, item_count, total } }`), so the SPA replaces its cached copy in one step. Each item is:
+
+```
+{ id, offer_id, quantity, is_active, stock, max_quantity, unit_price, price_seen, line_total,
+  seller { name }, product { slug, name, cover_image_url, platform_name, region_name } }
+```
 
 | Method | Path | Body | Success | Errors |
 |---|---|---|---|---|
-| GET | `/cart` | — | `200 { items[{ offer, product, seller, quantity, unit_price, line_total, available_stock }], total }` | |
-| POST | `/cart/items` | `offer_id, quantity` | `200` cart (adds to an existing line) | 422 inactive offer / over stock / qty > 10 |
-| PATCH | `/cart/items/{offer}` | `quantity` | `200` cart | 404, 422 |
-| DELETE | `/cart/items/{offer}` | — | `200` cart | 404 |
-| POST | `/cart/merge` | `items[{ offer_id, quantity }]` | `200` cart (quantities summed, clamped to stock and 10) | 422 |
+| GET | `/cart` | — | `200` cart | 401 |
+| POST | `/cart/items` | `offer_id, quantity?` (default 1) | `200` cart (adds to an existing line) | 422 unknown/inactive/sold-out offer, over stock, over 10 |
+| PATCH | `/cart/items/{id}` | `quantity` (1–10) | `200` cart | 404 (missing or not yours), 422 |
+| DELETE | `/cart/items/{id}` | — | `200` cart | 404 (missing or not yours) |
+| POST | `/cart/merge` | `merge_id` (UUID), `items[{ offer_id, quantity }]` (≤ 50) | `200` cart + `adjustments[{ offer_id, kind: clamped \| unavailable \| out_of_stock, requested, quantity }]`; a repeated `merge_id` returns the first result | 422 |
 
 ### Checkout & orders 🔒
 
@@ -582,7 +628,7 @@ Guests keep a cart in `localStorage` (`lib/cart.ts`). It stays there after login
 | `/` | Homepage (block-driven) | |
 | `/store` | Catalog + filters + sort. `?q=` turns it into search results, and all filter state lives in the URL | |
 | `/product/:slug` | Product page: summary and edition switcher, screenshot lightbox, sticky "Best offer" buy box, every seller offer ("Load more"), description and details. Sold-out and 404 states | |
-| `/cart` | Guest cart with live price/stock notices; the header badge shows the item count | |
+| `/cart` | Guest or server cart with live price/stock notices and one-time merge notices; the header badge shows the item count. Guests check out via "Log in to check out" (`/login?redirect=/cart`) | |
 | `/checkout/:reference` | Payment form for a pending order | 🔒 |
 | `/orders`, `/orders/:reference` | Order history, order detail with keys | 🔒 |
 | `/login`, `/register` | Auth (honours `?redirect=`) | |
@@ -605,7 +651,8 @@ frontend/src/
   index.css               tokens (@theme), fonts, base styles
   main.tsx                QueryClient (no retries on 4xx) + RouterProvider
   routes/                 router.tsx (all routes, lazy dev page), RequireAuth.tsx (waits for the session check, then guests → /login?redirect=)
-  lib/api/                client.ts (apiRequest/apiGet, Bearer token, 401 → onUnauthorized, ApiError with field errors + retryAfter), auth.ts, types.ts, catalog.ts (query options + hooks)
+  lib/api/                client.ts (apiRequest/apiGet, Bearer token, 401 → onUnauthorized, ApiError with field errors + retryAfter), auth.ts, cart.ts, types.ts, catalog.ts (query options + hooks)
+  lib/                    cart.ts (guest cart + merge id), cartReconcile.ts (CartLine + notices), cartSession.ts (merge once, reset on logout), useCartState.ts
   lib/auth/               token.ts, redirect.ts (safeRedirectPath, loginPathFor), AuthContext.tsx + useAuth.ts, passwordRules.ts
   lib/                    format.ts (Intl EUR), cn.ts
   hooks/                  useDebouncedValue

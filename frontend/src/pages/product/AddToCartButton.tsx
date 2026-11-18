@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '../../components/ui/Button'
 import type { ButtonSize, ButtonVariant } from '../../components/ui/buttonStyles'
 import type { ProductDetail, ProductOffer } from '../../lib/api/types'
-import { cart } from '../../lib/cart'
+import { useCartActions } from '../../lib/useCartState'
 
-type Feedback = 'idle' | 'added' | 'limit'
+type Feedback = { kind: 'idle' } | { kind: 'added' } | { kind: 'limit'; message: string } | { kind: 'error'; message: string }
 
 /**
- * Adds one key of an offer to the guest cart. The saved price is a display
- * snapshot only; the cart re-checks offers and checkout recomputes prices.
+ * Adds one key of an offer to the cart: the guest cart, or the server cart
+ * when signed in (which enforces the caps itself). Any saved price is a
+ * display snapshot only; checkout recomputes prices.
  */
 export function AddToCartButton({
   product,
@@ -25,13 +26,16 @@ export function AddToCartButton({
   fullWidth?: boolean
   label?: string
 }) {
-  const [feedback, setFeedback] = useState<Feedback>('idle')
+  const actions = useCartActions()
+  const [feedback, setFeedback] = useState<Feedback>({ kind: 'idle' })
+  const [pending, setPending] = useState(false)
   const timer = useRef<number | undefined>(undefined)
 
   useEffect(() => () => window.clearTimeout(timer.current), [])
 
-  const add = () => {
-    const result = cart.add(
+  const add = async () => {
+    setPending(true)
+    const result = await actions.add(
       {
         offerId: offer.id,
         snapshot: {
@@ -47,21 +51,22 @@ export function AddToCartButton({
       offer.stock,
     )
 
-    setFeedback(result.status === 'added' ? 'added' : 'limit')
+    setPending(false)
+    setFeedback(result.status === 'added' ? { kind: 'added' } : { kind: result.status === 'limit_reached' ? 'limit' : 'error', message: result.message })
     window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => setFeedback('idle'), 2500)
+    timer.current = window.setTimeout(() => setFeedback({ kind: 'idle' }), 2500)
   }
 
   return (
     <>
-      <Button variant={variant} size={size} fullWidth={fullWidth} onClick={add}>
-        {feedback === 'added' ? 'Added ✓' : label}
+      <Button variant={variant} size={size} fullWidth={fullWidth} loading={pending || !actions.ready} onClick={() => void add()}>
+        {feedback.kind === 'added' ? 'Added ✓' : label}
       </Button>
       <span role="status" className="sr-only">
-        {feedback === 'added' && `Added ${product.name} from ${offer.seller.name} to your cart.`}
-        {feedback === 'limit' && `You already have the most keys available from ${offer.seller.name} in your cart.`}
+        {feedback.kind === 'added' && `Added ${product.name} from ${offer.seller.name} to your cart.`}
+        {(feedback.kind === 'limit' || feedback.kind === 'error') && feedback.message}
       </span>
-      {feedback === 'limit' && <span className="text-xs text-warning">Maximum for this offer is already in your cart</span>}
+      {(feedback.kind === 'limit' || feedback.kind === 'error') && <span className="text-xs text-warning">{feedback.message}</span>}
     </>
   )
 }

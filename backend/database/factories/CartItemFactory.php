@@ -21,6 +21,7 @@ class CartItemFactory extends Factory
             'user_id' => User::factory(),
             'offer_id' => Offer::factory(),
             'quantity' => fake()->numberBetween(1, 3),
+            'price_seen_cents' => fn (array $attributes): int => Offer::query()->whereKey($attributes['offer_id'])->value('price_cents') ?? 999,
         ];
     }
 }

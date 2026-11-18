@@ -2,8 +2,8 @@ import { useSyncExternalStore } from 'react'
 import type { Money } from './api/types'
 
 /**
- * Guest cart in localStorage (merged into the server cart at sign-in later;
- * the item shape is what POST /cart/merge will accept).
+ * Guest cart in localStorage. At sign-in it is sent once to POST /cart/merge
+ * (with `mergeId()`, so a retry can't add it twice) and then cleared.
  *
  * The snapshot is for DISPLAY ONLY. Prices are never trusted from here: the
  * cart page re-checks every offer (GET /offers) and the server recomputes
@@ -25,6 +25,7 @@ export interface CartItem {
 }
 
 export const CART_STORAGE_KEY = 'eneba.cart.v1'
+export const MERGE_ID_STORAGE_KEY = 'eneba.cart.v1.merge-id'
 export const MAX_QUANTITY = 10
 
 export type AddResult = { status: 'added'; quantity: number } | { status: 'limit_reached'; quantity: number }
@@ -39,6 +40,12 @@ export interface CartStore {
   clear: () => void
   /** Re-read storage without writing (another tab changed it). Writing here would ping-pong between tabs. */
   reload: () => void
+  /**
+   * Idempotency key for merging this cart into the server cart. Stays the
+   * same until the cart changes (so a retried merge is recognised), and is
+   * replaced on any change (so new contents are merged as a new cart).
+   */
+  mergeId: () => string
 }
 
 const isMoney = (value: unknown): value is Money =>
@@ -81,14 +88,25 @@ export function parseCart(raw: string | null): CartItem[] {
   }
 }
 
-export function createCartStore(storage: Storage | null, now: () => Date = () => new Date()): CartStore {
-  let items = parseCart(storage?.getItem(CART_STORAGE_KEY) ?? null)
+const read = (storage: Storage | null, key: string): string | null => {
+  try {
+    return storage?.getItem(key) ?? null
+  } catch {
+    return null
+  }
+}
+
+export function createCartStore(storage: Storage | null, now: () => Date = () => new Date(), newId: () => string = () => crypto.randomUUID()): CartStore {
+  let items = parseCart(read(storage, CART_STORAGE_KEY))
+  let memoryMergeId: string | null = null
   const listeners = new Set<() => void>()
 
   const commit = (next: CartItem[]) => {
     items = next
+    memoryMergeId = null
     try {
       storage?.setItem(CART_STORAGE_KEY, JSON.stringify(next))
+      storage?.removeItem(MERGE_ID_STORAGE_KEY)
     } catch {
       // Storage full or blocked: the cart still works for this page view.
     }
@@ -128,8 +146,22 @@ export function createCartStore(storage: Storage | null, now: () => Date = () =>
       commit([])
     },
     reload() {
-      items = parseCart(storage?.getItem(CART_STORAGE_KEY) ?? null)
+      items = parseCart(read(storage, CART_STORAGE_KEY))
+      memoryMergeId = null
       listeners.forEach((listener) => listener())
+    },
+    mergeId() {
+      const stored = read(storage, MERGE_ID_STORAGE_KEY) ?? memoryMergeId
+      if (stored !== null) return stored
+
+      const id = newId()
+      memoryMergeId = id
+      try {
+        storage?.setItem(MERGE_ID_STORAGE_KEY, id)
+      } catch {
+        // Kept in memory for this page view.
+      }
+      return id
     },
   }
 }

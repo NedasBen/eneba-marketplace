@@ -19,6 +19,7 @@ class CartItem extends Model
         'user_id',
         'offer_id',
         'quantity',
+        'price_seen_cents',
     ];
 
     /**
@@ -28,6 +29,7 @@ class CartItem extends Model
     {
         return [
             'quantity' => 'integer',
+            'price_seen_cents' => 'integer',
         ];
     }
 

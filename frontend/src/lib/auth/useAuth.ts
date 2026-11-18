@@ -6,8 +6,8 @@ export type AuthStatus = 'loading' | 'authenticated' | 'guest'
 export interface AuthContextValue {
   status: AuthStatus
   user: User | null
-  /** Store the token from a login/register response. */
-  signIn: (response: AuthResponse) => void
+  /** Store the token from a login/register response and merge the guest cart. Never rejects. */
+  signIn: (response: AuthResponse) => Promise<void>
   /** Revoke the token on the server (best effort) and forget it locally. */
   signOut: () => Promise<void>
 }

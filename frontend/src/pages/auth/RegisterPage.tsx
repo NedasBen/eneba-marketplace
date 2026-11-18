@@ -47,7 +47,7 @@ export function RegisterPage() {
     setError(null)
 
     try {
-      signIn(await authApi.register(form))
+      await signIn(await authApi.register(form))
     } catch (caught) {
       setError(caught instanceof ApiError ? caught : new ApiError(0, 'Something went wrong. Please try again.'))
     } finally {

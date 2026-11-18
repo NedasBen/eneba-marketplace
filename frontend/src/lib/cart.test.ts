@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CART_STORAGE_KEY, MAX_QUANTITY, cartItemCount, createCartStore, parseCart, type CartItem } from './cart'
-import { cartTotal, reconcileCart } from './cartReconcile'
-import type { OfferState } from './api/types'
+import { CART_STORAGE_KEY, MAX_QUANTITY, MERGE_ID_STORAGE_KEY, cartItemCount, createCartStore, parseCart, type CartItem } from './cart'
 
 class MemoryStorage implements Storage {
   private values = new Map<string, string>()
@@ -35,16 +33,6 @@ const snapshot = (unitPrice = 1999): CartItem['snapshot'] => ({
   platformName: 'PC',
   regionName: 'GLOBAL',
   unitPrice: eur(unitPrice),
-})
-
-const offerState = (overrides: Partial<OfferState> = {}): OfferState => ({
-  id: 1,
-  is_active: true,
-  price: eur(1999),
-  stock: 5,
-  seller: { name: 'PixelVault' },
-  product: { slug: 'elden-ring-steam-key-global', name: 'ELDEN RING Steam Key GLOBAL' },
-  ...overrides,
 })
 
 describe('cart store', () => {
@@ -156,45 +144,42 @@ describe('parseCart', () => {
   })
 })
 
-describe('reconcileCart', () => {
-  const item = (quantity = 1, unitPrice = 1999): CartItem => ({ offerId: 1, quantity, addedAt: 'x', snapshot: snapshot(unitPrice) })
+describe('merge id', () => {
+  const sequence = () => {
+    let next = 0
+    return () => `merge-${++next}`
+  }
 
-  it('shows no notices and makes nothing purchasable before offers are loaded', () => {
-    expect(reconcileCart([item()], undefined)).toEqual([{ item: item(), currentPrice: null, notices: [], purchasable: false }])
+  it('stays the same until the cart changes, so a retried merge is recognised', () => {
+    const storage = new MemoryStorage()
+    const store = createCartStore(storage, () => new Date(), sequence())
+    store.add({ offerId: 1, snapshot: snapshot() }, 5)
+
+    expect(store.mergeId()).toBe('merge-1')
+    expect(store.mergeId()).toBe('merge-1')
+    expect(storage.getItem(MERGE_ID_STORAGE_KEY)).toBe('merge-1')
+    // After a page reload the same id is read back.
+    expect(createCartStore(storage, () => new Date(), sequence()).mergeId()).toBe('merge-1')
   })
 
-  it('accepts a line whose offer is unchanged', () => {
-    expect(reconcileCart([item()], [offerState()])[0]).toMatchObject({ notices: [], purchasable: true, currentPrice: eur(1999) })
+  it('is replaced when the cart changes, so new contents merge as a new cart', () => {
+    const storage = new MemoryStorage()
+    const store = createCartStore(storage, () => new Date(), sequence())
+    store.add({ offerId: 1, snapshot: snapshot() }, 5)
+    const first = store.mergeId()
+
+    store.setQuantity(1, 3)
+    expect(storage.getItem(MERGE_ID_STORAGE_KEY)).toBeNull()
+    expect(store.mergeId()).not.toBe(first)
+
+    const second = store.mergeId()
+    store.clear()
+    expect(store.mergeId()).not.toBe(second)
   })
 
-  it('flags a price change and uses the current price', () => {
-    expect(reconcileCart([item(1, 1999)], [offerState({ price: eur(2299) })])[0]).toMatchObject({
-      currentPrice: eur(2299),
-      notices: [{ kind: 'price_changed', previous: eur(1999), current: eur(2299) }],
-      purchasable: true,
-    })
-  })
-
-  it('flags offers that are out of stock, paused or gone', () => {
-    expect(reconcileCart([item()], [offerState({ stock: 0 })])[0]).toMatchObject({ notices: [{ kind: 'out_of_stock' }], purchasable: false })
-    expect(reconcileCart([item()], [offerState({ is_active: false })])[0]).toMatchObject({ notices: [{ kind: 'unavailable' }], purchasable: false })
-    expect(reconcileCart([item()], [])[0]).toMatchObject({ notices: [{ kind: 'unavailable' }], purchasable: false })
-  })
-
-  it('flags a quantity above the remaining stock', () => {
-    expect(reconcileCart([item(4)], [offerState({ stock: 2 })])[0]).toMatchObject({
-      notices: [{ kind: 'reduced_stock', available: 2 }],
-      purchasable: false,
-    })
-  })
-
-  it('totals only purchasable lines at current prices', () => {
-    const lines = reconcileCart(
-      [item(2, 1000), { ...item(1), offerId: 2 }],
-      [offerState({ price: eur(1500) }), offerState({ id: 2, stock: 0 })],
-    )
-
-    expect(cartTotal(lines)).toEqual(eur(3000))
-    expect(cartTotal(reconcileCart([item()], undefined))).toBeNull()
+  it('works without storage', () => {
+    const store = createCartStore(null, () => new Date(), sequence())
+    expect(store.mergeId()).toBe('merge-1')
+    expect(store.mergeId()).toBe('merge-1')
   })
 })

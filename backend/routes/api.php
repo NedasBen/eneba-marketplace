@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\CartController;
 use App\Http\Controllers\Api\V1\CatalogFilterController;
 use App\Http\Controllers\Api\V1\HomepageController;
 use App\Http\Controllers\Api\V1\OfferController;
@@ -23,6 +24,14 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
             Route::post('logout', [AuthController::class, 'logout'])->name('logout');
             Route::get('me', [AuthController::class, 'me'])->name('me');
         });
+    });
+
+    Route::prefix('cart')->name('cart.')->middleware('auth:sanctum')->group(function (): void {
+        Route::get('/', [CartController::class, 'index'])->name('show');
+        Route::post('items', [CartController::class, 'store'])->name('items.store');
+        Route::patch('items/{cartItem}', [CartController::class, 'update'])->whereNumber('cartItem')->name('items.update');
+        Route::delete('items/{cartItem}', [CartController::class, 'destroy'])->whereNumber('cartItem')->name('items.destroy');
+        Route::post('merge', [CartController::class, 'merge'])->name('merge');
     });
 
     Route::get('products', [ProductController::class, 'index'])->name('products.index');

@@ -22,9 +22,14 @@ export class ApiError extends Error {
     this.body = body
   }
 
-  /** 0 means the request never got a response (network down, API asleep). */
+  /** 0 means the request never got a response (network down, API asleep, timed out). */
   get isNetworkError(): boolean {
     return this.status === 0
+  }
+
+  /** The request was abandoned after REQUEST_TIMEOUT_MS (a network error too). */
+  get isTimeout(): boolean {
+    return this.status === 0 && this.body.reason === 'timeout'
   }
 
   /** First message for a field, e.g. `error.fieldError('email')`. */
@@ -72,6 +77,13 @@ declare global {
   }
 }
 
+/**
+ * How long one request may take. Render's free tier can take up to a minute to
+ * wake, so rather than leave a spinner hanging, an attempt gives up after 20 s;
+ * queries retry network errors twice (main.tsx), which covers a cold start.
+ */
+export const REQUEST_TIMEOUT_MS = 20_000
+
 /** Prefetched responses are only reused early on, so they can't be stale. */
 const PREFETCH_MAX_AGE_MS = 10_000
 
@@ -88,12 +100,26 @@ export function takePrefetched(url: string): Promise<Response | null> | undefine
   return pending
 }
 
+/** Resolves like `promise`, but rejects as soon as `signal` aborts. */
+function untilAborted<T>(promise: Promise<T> | undefined, signal: AbortSignal): Promise<T | undefined> {
+  if (promise === undefined) return Promise.resolve(undefined)
+  if (signal.aborted) return Promise.reject(signal.reason)
+
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason)
+    signal.addEventListener('abort', abort, { once: true })
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort))
+  })
+}
+
 interface RequestOptions {
   params?: Record<string, QueryValue>
   body?: unknown
   /** Extra request headers, e.g. `Idempotency-Key`. */
   headers?: Record<string, string>
   signal?: AbortSignal
+  /** Overrides REQUEST_TIMEOUT_MS for this request. */
+  timeoutMs?: number
   /**
    * Whether a 401 should end the session with a redirect to /login. Off for
    * the silent start-up check of a stored token and for logout itself.
@@ -114,8 +140,11 @@ export async function apiRequest<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   const url = `${API_BASE_URL}/api/v1${path}${toQueryString(options.params)}`
   let response: Response
 
+  const timeout = AbortSignal.timeout(options.timeoutMs ?? REQUEST_TIMEOUT_MS)
+  const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout
+
   try {
-    const prefetched = method === 'GET' ? await takePrefetched(url) : null
+    const prefetched = method === 'GET' ? await untilAborted(takePrefetched(url), signal) : null
     response =
       prefetched?.ok === true
         ? prefetched
@@ -123,9 +152,12 @@ export async function apiRequest<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
             method,
             headers,
             body: options.body === undefined ? undefined : JSON.stringify(options.body),
-            signal: options.signal,
+            signal,
           })
   } catch (error) {
+    if (timeout.aborted && options.signal?.aborted !== true) {
+      throw new ApiError(0, 'The server took too long to respond. Please try again.', {}, null, { reason: 'timeout' })
+    }
     if (error instanceof DOMException && error.name === 'AbortError') throw error
     throw new ApiError(0, 'Could not reach the server. Please try again.')
   }

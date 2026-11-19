@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { clearToken, getToken, setToken } from '../auth/token'
+import { describeError } from '../errors'
 import { ApiError, apiRequest, onUnauthorized } from './client'
 
 function respond(status: number, body: unknown = {}, headers: Record<string, string> = {}) {
@@ -82,6 +83,63 @@ describe('apiRequest', () => {
   it('returns undefined for 204 No Content', async () => {
     respond(204)
     await expect(apiRequest('POST', '/auth/logout')).resolves.toBeUndefined()
+  })
+})
+
+/** A fetch that never answers, only rejecting when its signal aborts (an asleep server). */
+function hang() {
+  const fetchMock = vi.fn(
+    (_url: string, init: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        if (init.signal?.aborted) reject(init.signal.reason)
+        init.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+      }),
+  )
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
+
+describe('request timeout', () => {
+  it('gives up on a request that hangs and explains the server may be waking', async () => {
+    hang()
+
+    const error = await rejection(apiRequest('GET', '/products', { timeoutMs: 20 }))
+
+    expect(error.status).toBe(0)
+    expect(error.isNetworkError).toBe(true)
+    expect(error.isTimeout).toBe(true)
+    expect(describeError(error)).toContain('taking too long')
+  })
+
+  it('applies the default timeout to every request', async () => {
+    const fetchMock = respond(200, { ok: true })
+
+    await apiRequest('GET', '/products')
+
+    const signal = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].signal
+    expect(signal).toBeInstanceOf(AbortSignal)
+    expect(signal?.aborted).toBe(false)
+  })
+
+  it('still rethrows a caller abort as an AbortError, not a timeout', async () => {
+    hang()
+    const controller = new AbortController()
+
+    const request = apiRequest('GET', '/products', { signal: controller.signal, timeoutMs: 5_000 })
+    controller.abort()
+
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('does not wait forever on a prefetched response that never arrives', async () => {
+    hang()
+    const homepageUrl = `${(import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '')}/api/v1/homepage`
+    vi.stubGlobal('window', { __apiPrefetch: { [homepageUrl]: new Promise<Response | null>(() => {}) } })
+    vi.stubGlobal('performance', { now: () => 500 })
+
+    const error = await rejection(apiRequest('GET', '/homepage', { timeoutMs: 20 }))
+
+    expect(error.isTimeout).toBe(true)
   })
 })
 

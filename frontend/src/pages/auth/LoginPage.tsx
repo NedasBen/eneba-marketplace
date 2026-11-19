@@ -113,7 +113,13 @@ export function LoginPage() {
         <Button variant="purple" fullWidth disabled={submitting || locked} onClick={signInWithDemoAccount}>
           Use demo account
         </Button>
-        <p className="text-center text-xs text-muted">Signs in as {DEMO_ACCOUNT.email}, a seeded test account.</p>
+        <p className="text-center text-xs text-muted">
+          Signs in as {DEMO_ACCOUNT.email}, a seeded test account shared by everyone trying the demo, so its cart and pending orders can change under you.{' '}
+          <Link to="/register" className="underline hover:text-white">
+            Register
+          </Link>{' '}
+          for a private one.
+        </p>
       </div>
     </AuthCard>
   )

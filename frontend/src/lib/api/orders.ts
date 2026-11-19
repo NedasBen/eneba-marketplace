@@ -47,6 +47,24 @@ export interface Shortage {
   available: number
 }
 
+/** The `shortages` of a 409 checkout body, keeping only well-formed entries. */
+export function parseShortages(body: Record<string, unknown>): Shortage[] {
+  if (!Array.isArray(body.shortages)) return []
+
+  return body.shortages.filter((entry: unknown): entry is Shortage => {
+    if (typeof entry !== 'object' || entry === null) return false
+    const candidate = entry as Record<string, unknown>
+
+    return (
+      typeof candidate.offer_id === 'number' &&
+      typeof candidate.product_name === 'string' &&
+      typeof candidate.seller_name === 'string' &&
+      typeof candidate.requested === 'number' &&
+      typeof candidate.available === 'number'
+    )
+  })
+}
+
 export interface CardInput {
   card_number: string
   expiry_month: number

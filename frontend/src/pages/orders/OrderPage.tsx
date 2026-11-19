@@ -7,6 +7,7 @@ import { EmptyState, ErrorState } from '../../components/ui/PageState'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { ApiError } from '../../lib/api/client'
 import { orderQueries, type OrderKey } from '../../lib/api/orders'
+import { hasStateFlag } from '../../lib/navigationState'
 import { OrderSummary } from './OrderSummary'
 
 /** Copy to the clipboard, falling back to selecting the text where the Clipboard API is unavailable. */
@@ -62,7 +63,7 @@ function KeyRow({ productKey }: { productKey: OrderKey }) {
 export function OrderPage() {
   const { reference = '' } = useParams()
   const location = useLocation()
-  const justPaid = (location.state as { justPaid?: boolean } | null)?.justPaid === true
+  const justPaid = hasStateFlag(location.state, 'justPaid')
   const order = useQuery(orderQueries.detail(reference))
 
   return (

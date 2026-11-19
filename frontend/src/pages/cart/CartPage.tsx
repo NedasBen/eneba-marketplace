@@ -7,7 +7,7 @@ import { EmptyState, ErrorState } from '../../components/ui/PageState'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { CART_QUERY_KEY } from '../../lib/api/cart'
 import { ApiError } from '../../lib/api/client'
-import { orderQueries, ordersApi, type Shortage } from '../../lib/api/orders'
+import { orderQueries, ordersApi, parseShortages, type Shortage } from '../../lib/api/orders'
 import { loginPathFor } from '../../lib/auth/redirect'
 import { MAX_QUANTITY } from '../../lib/cart'
 import type { CartLine, CartNotice } from '../../lib/cartReconcile'
@@ -138,7 +138,7 @@ function CheckoutButton({ lines, disabled }: { lines: CartLine[]; disabled: bool
       await navigate(`/checkout/${order.reference}`)
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
-        setShortages((caught.body.shortages as Shortage[] | undefined) ?? [])
+        setShortages(parseShortages(caught.body))
         setError(caught.message)
         void queryClient.invalidateQueries({ queryKey: CART_QUERY_KEY })
       } else if (caught instanceof ApiError && caught.status === 422) {

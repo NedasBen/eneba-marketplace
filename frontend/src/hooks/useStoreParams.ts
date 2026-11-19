@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router'
+import { hasStateFlag } from '../lib/navigationState'
 import { parseStoreParams, toQueryString, type StoreState } from '../lib/storeParams'
 
 export interface StoreNavigationState {
@@ -33,6 +34,6 @@ export function useStoreParams() {
     state,
     commit,
     isCanonical: canonicalSearch === location.search,
-    navigationState: (location.state ?? {}) as StoreNavigationState,
+    navigationState: { removedInvalidFilters: hasStateFlag(location.state, 'removedInvalidFilters') } satisfies StoreNavigationState,
   }
 }

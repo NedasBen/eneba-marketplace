@@ -1,3 +1,5 @@
+import type { CardInput } from './api/orders'
+
 /**
  * Card form helpers for the simulated payment. The server validates
  * everything again; these only give instant feedback.
@@ -54,6 +56,31 @@ export function parseExpiry(value: string): { month: number; year: number } | nu
   if (month < 1 || month > 12) return null
 
   return { month, year: 2000 + Number(match[2]) }
+}
+
+export type CardFields = { number: string; expiry: string; cvc: string; name: string }
+export type CardFieldErrors = Partial<Record<keyof CardFields, string>>
+
+/**
+ * Instant checks of the card form (the server validates everything again).
+ * Either the fields' errors, or the card ready to send.
+ */
+export function checkCardFields(fields: CardFields, now: Date = new Date()): { errors: CardFieldErrors; card: null } | { errors: Record<string, never>; card: CardInput } {
+  const errors: CardFieldErrors = {}
+  const expiry = parseExpiry(fields.expiry)
+
+  if (!passesLuhn(fields.number)) errors.number = 'Check the card number.'
+  if (expiry === null) errors.expiry = 'Use MM/YY.'
+  else if (isExpired(expiry, now)) errors.expiry = 'This card has expired.'
+  if (!/^\d{3}$/.test(fields.cvc)) errors.cvc = '3 digits.'
+  if (fields.name.trim() === '') errors.name = 'Enter the name on the card.'
+
+  if (expiry === null || Object.keys(errors).length > 0) return { errors, card: null }
+
+  return {
+    errors: {},
+    card: { card_number: cardDigits(fields.number), expiry_month: expiry.month, expiry_year: expiry.year, cvc: fields.cvc, cardholder_name: fields.name.trim() },
+  }
 }
 
 /** A card is valid through the last day of its expiry month. */

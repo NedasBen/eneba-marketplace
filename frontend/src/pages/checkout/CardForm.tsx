@@ -2,24 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Button } from '../../components/ui/Button'
 import { TextField } from '../../components/ui/TextField'
 import type { CardInput } from '../../lib/api/orders'
-import { cardDigits, formatCardNumber, formatExpiry, isExpired, parseExpiry, passesLuhn, sampleExpiry, TEST_CARDS } from '../../lib/card'
-
-type Fields = { number: string; expiry: string; cvc: string; name: string }
-type FieldErrors = Partial<Record<keyof Fields, string>>
-
-/** Instant checks; the server validates everything again. */
-function validate(fields: Fields): FieldErrors {
-  const errors: FieldErrors = {}
-  const expiry = parseExpiry(fields.expiry)
-
-  if (!passesLuhn(fields.number)) errors.number = 'Check the card number.'
-  if (expiry === null) errors.expiry = 'Use MM/YY.'
-  else if (isExpired(expiry)) errors.expiry = 'This card has expired.'
-  if (!/^\d{3}$/.test(fields.cvc)) errors.cvc = '3 digits.'
-  if (fields.name.trim() === '') errors.name = 'Enter the name on the card.'
-
-  return errors
-}
+import { checkCardFields, formatCardNumber, formatExpiry, sampleExpiry, TEST_CARDS, type CardFieldErrors, type CardFields } from '../../lib/card'
 
 /**
  * Simulated card form. Clicking a test card fills it in; nothing here
@@ -36,10 +19,10 @@ export function CardForm({
   defaultName: string
   onSubmit: (card: CardInput) => void
 }) {
-  const [fields, setFields] = useState<Fields>({ number: '', expiry: '', cvc: '', name: defaultName })
-  const [errors, setErrors] = useState<FieldErrors>({})
+  const [fields, setFields] = useState<CardFields>({ number: '', expiry: '', cvc: '', name: defaultName })
+  const [errors, setErrors] = useState<CardFieldErrors>({})
 
-  const set = (field: keyof Fields, value: string) => {
+  const set = (field: keyof CardFields, value: string) => {
     setFields((current) => ({ ...current, [field]: value }))
     setErrors((current) => ({ ...current, [field]: undefined }))
   }
@@ -51,12 +34,9 @@ export function CardForm({
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const found = validate(fields)
+    const { errors: found, card } = checkCardFields(fields)
     setErrors(found)
-    if (Object.keys(found).length > 0) return
-
-    const expiry = parseExpiry(fields.expiry)!
-    onSubmit({ card_number: cardDigits(fields.number), expiry_month: expiry.month, expiry_year: expiry.year, cvc: fields.cvc, cardholder_name: fields.name.trim() })
+    if (card !== null) onSubmit(card)
   }
 
   const server = (field: string) => serverErrors[field]?.[0]

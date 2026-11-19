@@ -14,7 +14,7 @@ use App\Http\Middleware\SweepExpiredReservations;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->name('api.v1.')->group(function (): void {
-    Route::get('ping', PingController::class)->name('ping');
+    Route::get('ping', PingController::class)->middleware('throttle:ping')->name('ping');
 
     Route::prefix('auth')->name('auth.')->group(function (): void {
         // Per-IP ceiling on top of LoginRequest's per-email+IP lockout.

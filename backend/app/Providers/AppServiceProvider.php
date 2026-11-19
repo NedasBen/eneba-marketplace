@@ -42,6 +42,9 @@ class AppServiceProvider extends ServiceProvider
         // Autocomplete fires on keystrokes: generous, but bounded per client.
         RateLimiter::for('search', fn (Request $request): Limit => Limit::perMinute(60)->by($request->ip()));
 
+        // Public health check: plenty for monitoring or a wake-up poll, not a free database load test.
+        RateLimiter::for('ping', fn (Request $request): Limit => Limit::perMinute(60)->by($request->ip()));
+
         // Login/register ceiling per IP, so one client can't cycle through many emails.
         RateLimiter::for('auth', fn (Request $request): Limit => Limit::perMinute(20)->by($request->ip()));
 

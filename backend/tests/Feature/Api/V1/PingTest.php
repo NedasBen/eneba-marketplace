@@ -8,13 +8,24 @@ it('reports ok with a live database round-trip', function () {
         ->assertOk()
         ->assertJsonPath('status', 'ok')
         ->assertJsonPath('database.connected', true)
-        ->assertJsonStructure(['database' => ['server_time', 'latency_ms']]);
+        ->assertJsonStructure(['database' => ['latency_ms']])
+        ->assertJsonMissingPath('environment')
+        ->assertJsonMissingPath('database.server_time');
+});
+
+it('is rate limited per IP', function () {
+    foreach (range(1, 60) as $request) {
+        $this->getJson(route('api.v1.ping'))->assertOk();
+    }
+
+    $this->getJson(route('api.v1.ping'))->assertTooManyRequests();
+    $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.7'])->getJson(route('api.v1.ping'))->assertOk();
 });
 
 it('returns 503 when the database is unreachable', function () {
     DB::shouldReceive('scalar')
         ->once()
-        ->andThrow(new QueryException('pgsql', 'select now()', [], new PDOException('connection refused')));
+        ->andThrow(new QueryException('pgsql', 'select 1', [], new PDOException('connection refused')));
 
     $this->getJson(route('api.v1.ping'))
         ->assertServiceUnavailable()

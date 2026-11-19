@@ -690,7 +690,7 @@ An order is `{ reference, status, total, expires_at, paid_at, created_at, server
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/up` | Laravel health route, used by Render's health check (outside `/api/v1`, no DB access, so it stays green while Neon wakes) |
-| GET | `/api/v1/ping` | Full-stack check: `200 { status, environment, database: { connected, server_time, latency_ms } }`, or `503` if the DB is unreachable |
+| GET | `/api/v1/ping` | Full-stack check: `200 { status, database: { connected, latency_ms } }`, or `503` if the DB is unreachable. Public, so nothing about the environment; 60 a minute per IP |
 
 ---
 

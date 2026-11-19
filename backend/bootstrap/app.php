@@ -14,6 +14,11 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         // Render terminates TLS at its load balancer and forwards X-Forwarded-* headers.
+        // Trusting every proxy is safe only because the app is reachable solely through
+        // Render's proxy, which rewrites X-Forwarded-For to the real client IP (checked in
+        // production: spoofed X-Forwarded-For headers did not escape the login lockout).
+        // The per-IP rate limits depend on this. Behind any other host, list its proxy
+        // ranges here instead of '*', or clients could pick their own IP.
         $middleware->trustProxies(at: '*');
 
         // No server-rendered login page exists: never try to redirect API guests

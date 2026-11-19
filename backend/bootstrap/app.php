@@ -24,4 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // API routes always answer in JSON (e.g. 401 {"message":"Unauthenticated."}),
         // even without an Accept header, instead of redirecting to a web login page.
         $exceptions->shouldRenderJsonWhen(fn (Request $request): bool => $request->is('api/*') || $request->expectsJson());
+
+        // Card data is never stored or logged; also keep it out of flashed old input.
+        $exceptions->dontFlash(['card_number', 'cvc']);
     })->create();

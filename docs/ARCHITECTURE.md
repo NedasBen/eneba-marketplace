@@ -499,9 +499,12 @@ sequenceDiagram
 - **No account enumeration:**
   - An unknown email and a wrong password return the same `422` with the same message (`auth.failed`).
   - Both take the same time: when the email doesn't exist, `Hash::check` still runs against a fixed bcrypt hash of the same cost.
+  - **Registration does reveal it**, on purpose: an existing email gets `422` "The email has already been taken." Hiding that would mean "check your inbox" verification emails, and there's no mail delivery in this project. The `auth` limit (20 a minute per IP) caps how fast anyone can probe. With real email, registration would always answer "check your inbox" and send the existing user a sign-in hint instead.
 - **Rate limits:**
   - Login allows 5 failed attempts per email + IP. The next one gets `429` with `Retry-After`, even if the password is right. A successful login resets the counter.
   - On top of that, register and login share a limit of 20 requests a minute per IP (the `auth` limiter), which slows credential stuffing across many emails.
+  - These per-IP limits rely on the real client IP. `bootstrap/app.php` trusts all proxies because the API is only reachable through Render's proxy, which rewrites `X-Forwarded-For`; a production check with spoofed headers still hit the lockout. On another host, list its proxy ranges instead.
+  - Anyone can lock the shared demo account out for a minute, but only from their own IP, because the lockout key includes it.
 - **Unauthenticated API requests** always get a JSON `401 {"message":"Unauthenticated."}`, never a redirect, even when there's no `Accept` header (`bootstrap/app.php`).
 - **SPA side:**
   - `lib/auth/token.ts` keeps the token in `localStorage`, with an in-memory fallback when storage is blocked. `lib/api/client.ts` sends it as `Authorization: Bearer <token>`.
@@ -513,7 +516,7 @@ sequenceDiagram
   - encoded slashes and backslashes (`/%2F…`, `/%5C…`);
   - control characters, `javascript:` and `data:`;
   - the auth pages themselves.
-- CORS allows only the frontend origin (`FRONTEND_URL`). No credentials or cookies are involved.
+- CORS allows only the frontend origin (`FRONTEND_URL`). No credentials or cookies are involved. `Retry-After` is an exposed header, so the login page can show the real lockout countdown across origins.
 
 **The XSS trade-off.** Any JavaScript running on the page can read `localStorage`, so a single XSS bug would let an attacker *steal* the token and use it elsewhere until it expires. An `HttpOnly` cookie can't be read by JS. However, XSS can still make authenticated requests from inside the page in either model, so preventing XSS is the real defence whichever storage we pick. Mitigations:
 

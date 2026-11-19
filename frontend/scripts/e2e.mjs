@@ -196,12 +196,9 @@ try {
   await goto('/store')
   await waitFor('(() => { const strong = document.querySelector("section[aria-label=Results] strong"); return strong && /\\d/.test(strong.textContent) })()', 'store results')
   const allCount = await resultCount()
-  await evaluate(`(() => {
-    const label = [...document.querySelectorAll('aside label, form label, label')].find((candidate) => candidate.querySelector('input[type=checkbox]') && candidate.innerText.trim().startsWith('PC'))
-    if (!label) throw new Error('no PC filter')
-    label.querySelector('input').click()
-    return true
-  })()`)
+  const pcFilter = `[...document.querySelectorAll('label')].find((label) => label.querySelector('input[type=checkbox]') && label.innerText.trim().startsWith('PC'))`
+  await waitFor(`!!${pcFilter}`, 'PC filter')
+  await evaluate(`${pcFilter}.querySelector('input').click(), true`)
   await waitFor('location.search.includes("platform=pc")', 'platform filter in the URL')
   await waitFor(`(() => { const strong = document.querySelector("section[aria-label=Results] strong"); const n = Number((strong?.textContent ?? '').replace(/[^0-9]/g, '')); return n > 0 && n < ${allCount} && document.querySelector("section[aria-label=Results]").getAttribute("aria-busy") !== "true" })()`, 'filtered count')
   const pcCount = await resultCount()

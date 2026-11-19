@@ -7,19 +7,9 @@ import { EmptyState, ErrorState } from '../../components/ui/PageState'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { ApiError } from '../../lib/api/client'
 import { orderQueries, type OrderKey } from '../../lib/api/orders'
+import { copyText } from '../../lib/clipboard'
 import { hasStateFlag } from '../../lib/navigationState'
 import { OrderSummary } from './OrderSummary'
-
-/** Copy to the clipboard, falling back to selecting the text where the Clipboard API is unavailable. */
-async function copyText(text: string, fallbackInput: HTMLInputElement | null): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    fallbackInput?.select()
-    return document.execCommand?.('copy') ?? false
-  }
-}
 
 function KeyRow({ productKey }: { productKey: OrderKey }) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -29,7 +19,7 @@ function KeyRow({ productKey }: { productKey: OrderKey }) {
   useEffect(() => () => window.clearTimeout(timer.current), [])
 
   const copy = async () => {
-    const ok = await copyText(productKey.code, inputRef.current)
+    const ok = await copyText(productKey.code, () => inputRef.current?.select())
     setCopied(ok ? 'copied' : 'select')
     window.clearTimeout(timer.current)
     timer.current = window.setTimeout(() => setCopied('idle'), ok ? 2000 : 6000)
@@ -50,7 +40,7 @@ function KeyRow({ productKey }: { productKey: OrderKey }) {
       </Button>
       <span role="status" className={copied === 'select' ? 'text-xs text-soft' : 'sr-only'}>
         {copied === 'copied' && 'Key copied to the clipboard.'}
-        {copied === 'select' && 'Selected: press Ctrl+C to copy.'}
+        {copied === 'select' && 'Selected: press Ctrl+C (⌘C on a Mac) to copy.'}
       </span>
     </li>
   )

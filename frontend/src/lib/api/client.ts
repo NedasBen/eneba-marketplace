@@ -88,7 +88,7 @@ export const REQUEST_TIMEOUT_MS = 20_000
 const PREFETCH_MAX_AGE_MS = 10_000
 
 /** A response public/prefetch.js already started for this URL (each is used once). */
-export function takePrefetched(url: string): Promise<Response | null> | undefined {
+function takePrefetched(url: string): Promise<Response | null> | undefined {
   if (typeof window === 'undefined' || window.__apiPrefetch === undefined) return undefined
   if (performance.now() > PREFETCH_MAX_AGE_MS) {
     window.__apiPrefetch = undefined

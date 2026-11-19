@@ -48,7 +48,10 @@ export interface CartView {
   retry: () => void
 }
 
-/** Lines with live price and stock notices, for the cart page. */
+/**
+ * Lines with live price and stock notices, for the cart page. Rebuilt on each
+ * render: it is cheap, and its one consumer reads it during render only.
+ */
 export function useCartLines(): CartView {
   const { status } = useAuth()
   const guestItems = useCart()
@@ -56,40 +59,38 @@ export function useCartLines(): CartView {
   const server = useServerCart(isServer, 'always')
   const offers = useOfferStates(isServer ? [] : guestItems.map((item) => item.offerId))
 
-  return useMemo(() => {
-    const retryServer = () => void server.refetch()
-    const retryOffers = () => void offers.refetch()
+  const retryServer = () => void server.refetch()
+  const retryOffers = () => void offers.refetch()
 
-    if (status === 'loading') {
-      return { source: 'guest', lines: [], total: null, isLoading: true, isFetching: true, isError: false, error: null, retry: retryServer }
-    }
+  if (status === 'loading') {
+    return { source: 'guest', lines: [], total: null, isLoading: true, isFetching: true, isError: false, error: null, retry: retryServer }
+  }
 
-    if (isServer) {
-      const lines = server.data ? serverCartLines(server.data) : []
-      return {
-        source: 'server',
-        lines,
-        total: cartTotal(lines),
-        isLoading: server.isPending,
-        isFetching: server.isFetching,
-        isError: server.isError,
-        error: server.error,
-        retry: retryServer,
-      }
-    }
-
-    const lines = reconcileCart(guestItems, offers.data)
+  if (isServer) {
+    const lines = server.data ? serverCartLines(server.data) : []
     return {
-      source: 'guest',
+      source: 'server',
       lines,
       total: cartTotal(lines),
-      isLoading: false,
-      isFetching: offers.isFetching,
-      isError: offers.isError,
-      error: offers.error,
-      retry: retryOffers,
+      isLoading: server.isPending,
+      isFetching: server.isFetching,
+      isError: server.isError,
+      error: server.error,
+      retry: retryServer,
     }
-  }, [status, isServer, server, guestItems, offers])
+  }
+
+  const lines = reconcileCart(guestItems, offers.data)
+  return {
+    source: 'guest',
+    lines,
+    total: cartTotal(lines),
+    isLoading: false,
+    isFetching: offers.isFetching,
+    isError: offers.isError,
+    error: offers.error,
+    retry: retryOffers,
+  }
 }
 
 export type AddOutcome = { status: 'added'; quantity: number } | { status: 'limit_reached'; message: string } | { status: 'error'; message: string }

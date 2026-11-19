@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\Payment;
 use App\Models\ProductKey;
 use App\Models\User;
+use App\Services\Checkout\ReleaseExpiredReservations;
 use App\Services\Payments\TestCards;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
@@ -415,5 +416,48 @@ describe('the expiry sweep', function () {
         $this->travel(61)->seconds();
         $this->getJson('/api/v1/catalog/filters')->assertOk();
         expect($overdue->fresh()->status)->toBe(OrderStatus::Expired);
+    });
+
+    it('does not sweep after a failed catalog read', function () {
+        $overdue = Order::factory()->for(User::factory())->create(['expires_at' => now()->subMinute()]);
+
+        $this->getJson('/api/v1/products?q='.str_repeat('a', 101))->assertUnprocessable();
+        expect($overdue->fresh()->status)->toBe(OrderStatus::Pending);
+
+        $this->getJson('/api/v1/catalog/filters')->assertOk();
+        expect($overdue->fresh()->status)->toBe(OrderStatus::Expired);
+    });
+
+    it('drains a backlog larger than one batch from the command', function () {
+        $total = ReleaseExpiredReservations::BATCH_SIZE + 2;
+        Order::factory()->for(User::factory())->count($total)->create(['expires_at' => now()->subMinute()]);
+
+        $this->artisan('orders:release-expired')->expectsOutput("Expired {$total} orders.")->assertSuccessful();
+
+        expect(Order::query()->where('status', OrderStatus::Pending)->exists())->toBeFalse();
+    });
+});
+
+describe('payment rate limit', function () {
+    it('allows 10 payment attempts a minute per user, then answers 429', function () {
+        $user = signedIn();
+        addToCart($user, stockedOffer(stock: 1));
+        $reference = checkout()->assertCreated()->json('data.reference');
+
+        foreach (range(1, 10) as $attempt) {
+            pay($reference, TestCards::CARD_DECLINED)->assertPaymentRequired();
+        }
+
+        pay($reference)->assertTooManyRequests()->assertHeader('Retry-After');
+        expect(Order::query()->sole()->status)->toBe(OrderStatus::Pending);
+
+        // The limit is per user: someone else can still pay.
+        $other = signedIn();
+        addToCart($other, stockedOffer(stock: 1));
+        pay(checkout()->assertCreated()->json('data.reference'))->assertOk();
+
+        $this->travel(61)->seconds();
+        signedIn($user);
+        pay($reference)->assertOk();
     });
 });

@@ -29,3 +29,34 @@ it('allows cross-origin requests from the configured frontend origin', function 
         ->assertOk()
         ->assertHeader('Access-Control-Allow-Origin', $frontendOrigin);
 });
+
+it('never grants CORS access to other origins', function (array $allowedOrigins) {
+    config(['cors.allowed_origins' => $allowedOrigins]);
+
+    $allowOrigin = $this->getJson(route('api.v1.ping'), ['Origin' => 'https://evil.example'])
+        ->headers->get('Access-Control-Allow-Origin');
+
+    // One allowed origin is always named outright (the browser then refuses others); with several, others get none.
+    expect($allowOrigin)->not->toBe('https://evil.example')->not->toBe('*');
+})->with([
+    'one frontend' => [['https://frontend.example']],
+    'several frontends' => [['https://frontend.example', 'http://localhost:5173']],
+]);
+
+it('lets the frontend send authenticated JSON requests and read Retry-After', function () {
+    $frontendOrigin = 'https://frontend.example';
+    config(['cors.allowed_origins' => [$frontendOrigin]]);
+
+    $this->call('OPTIONS', '/api/v1/checkout', server: [
+        'HTTP_ORIGIN' => $frontendOrigin,
+        'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'POST',
+        'HTTP_ACCESS_CONTROL_REQUEST_HEADERS' => 'authorization, content-type, idempotency-key',
+    ])
+        ->assertNoContent()
+        ->assertHeader('Access-Control-Allow-Origin', $frontendOrigin)
+        ->assertHeader('Access-Control-Allow-Headers', 'authorization, content-type, idempotency-key');
+
+    // A 429's Retry-After drives the login countdown, so the browser must be allowed to read it.
+    $this->getJson(route('api.v1.ping'), ['Origin' => $frontendOrigin])
+        ->assertHeader('Access-Control-Expose-Headers', 'Retry-After');
+});
